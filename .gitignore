@@ -1,0 +1,12 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Local student tokens and test results (sensitive data)
+data_token/
+hasil ujian/
+
+# IDE/Gemini agent files
+.gemini/
+.idea/
+.vscode/

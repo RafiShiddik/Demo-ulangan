@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Pengawas | SMK Budi Murni 2</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #0b1329;
+            color: #e2e8f0;
+            padding: 30px 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1050px;
+            margin: 0 auto;
+        }
+        /* Login card wrapper */
+        .login-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 80vh;
+        }
+        .login-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            text-align: center;
+        }
+        .login-card h2 {
+            font-size: 24px;
+            color: white;
+            margin-bottom: 25px;
+            font-weight: 700;
+        }
+        .form-group {
+            text-align: left;
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #94a3b8;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #0f172a;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            outline: none;
+            color: white;
+            font-size: 15px;
+            transition: all 0.3s;
+        }
+        input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+        .alert-error {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-submit:hover {
+            background: #2563eb;
+        }
+
+        /* Dashboard Styles */
+        .dash-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .dash-header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+        }
+        .btn-logout {
+            padding: 8px 16px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-logout:hover {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .grid-dash {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+        }
+        @media (max-width: 820px) {
+            .grid-dash {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Stats Panel */
+        .card-stats {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 25px;
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2);
+            height: fit-content;
+        }
+        .card-stats h3 {
+            font-size: 16px;
+            color: #94a3b8;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .token-showcase {
+            background: #0f172a;
+            border: 1px dashed rgba(59, 130, 246, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .token-lbl {
+            font-size: 12px;
+            color: #64748b;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .token-val {
+            font-size: 32px;
+            font-weight: 800;
+            color: #3b82f6;
+            letter-spacing: 2px;
+        }
+        .form-update-token {
+            display: flex;
+            gap: 10px;
+        }
+        .form-update-token input {
+            text-transform: uppercase;
+            flex-grow: 1;
+        }
+        .btn-edit-token {
+            padding: 12px 18px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-edit-token:hover {
+            background: #2563eb;
+        }
+
+        /* Students Card list */
+        .card-list {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 25px;
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.25);
+        }
+        .card-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .card-list-header h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: white;
+        }
+        .badge-count {
+            background: rgba(59,130,246,0.15);
+            color: #60a5fa;
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        /* Table styles */
+        .table-wrapper {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+        th {
+            padding: 12px 15px;
+            border-bottom: 2px solid rgba(255,255,255,0.08);
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        td {
+            padding: 14px 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 14px;
+            color: #cbd5e1;
+        }
+        .student-name-col {
+            font-weight: 500;
+            color: white;
+        }
+        /* Custom dynamic badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-badge.aktif {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+        }
+        .status-badge.terkunci {
+            background: rgba(239, 68, 68, 0.18);
+            color: #fca5a5;
+        }
+        .status-badge.selesai {
+            background: rgba(59, 130, 246, 0.15);
+            color: #93c5fd;
+        }
+        
+        .student-lock-key {
+            font-weight: 700;
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px dashed rgba(239, 68, 68, 0.2);
+            padding: 2px 6px;
+            border-radius: 6px;
+            letter-spacing: 1px;
+        }
+        .btn-table {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 5px;
+        }
+        .btn-table-unlock {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-table-unlock:hover {
+            background: #dc2626;
+        }
+        .btn-table-reset {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #cbd5e1;
+        }
+        .btn-table-reset:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        
+        {% if is_login %}
+        <!-- Proctor Auth Panel -->
+        <div class="login-wrapper">
+            <div class="login-card">
+                <h2>Portal Pengawas Ujian</h2>
+                
+                {% if error %}
+                <div class="alert-error">{{ error }}</div>
+                {% endif %}
+                
+                <form action="{{ url_for('proctor_login') }}" method="POST">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" placeholder="Masukkan ID Pengawas" required autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password Password</label>
+                        <input type="password" id="password" name="password" placeholder="Masukkan Kata Sandi" required>
+                    </div>
+                    <button type="submit" class="btn-submit">Login Masuk</button>
+                </form>
+            </div>
+        </div>
+        
+        {% else %}
+        <!-- Proctor Dashboard Panel -->
+        <div class="dash-header">
+            <div>
+                <h1>Dashboard Pengawas</h1>
+                <p style="color: #64748b; font-size:14px;">Pemantauan Ujian Secara Real-time | SMK Budi Murni 2</p>
+            </div>
+            <a href="{{ url_for('proctor_logout') }}" class="btn-logout">Keluar Sesi</a>
+        </div>
+        
+        <div class="grid-dash">
+            
+            <!-- Left Grid: Token Manager & Quick Action -->
+            <div>
+                <div class="card-stats">
+                    <h3>Token Gerbang Utama</h3>
+                    <div class="token-showcase">
+                        <div class="token-lbl">Token Berjalan Saat Ini</div>
+                        <div class="token-val" id="activeTokenDisplay">{{ initial_token }}</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Update Token Masuk</label>
+                        <div class="form-update-token">
+                            <input type="text" id="newTokenVal" placeholder="TOKEN BARU" maxlength="8" value="{{ initial_token }}">
+                            <button class="btn-edit-token" onclick="updateInitialToken()">Update</button>
+                        </div>
+                        <p style="font-size:12px; color:#64748b; margin-top:8px; line-height:1.4;">
+                            *Token masuk ini diberikan pada awal ujian bagi siswa yang belum masuk. Siswa yang terkunci karena keluar dari tab hanya bisa dibuka dengan token khusus siswa tersebut.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Grid: Live Students Monitor -->
+            <div>
+                <div class="card-list">
+                    <div class="card-list-header">
+                        <h3>Daftar Peserta Didik</h3>
+                        <span class="badge-count" id="studentCounter">0 Siswa Terdaftar</span>
+                    </div>
+                    
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Nama Siswa</th>
+                                    <th>Kelas/Jurusan</th>
+                                    <th>Status</th>
+                                    <th>Token Lock</th>
+                                    <th>Nilai</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studentTableBody">
+                                <!-- Loaded dynamically via Javascript polling -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        
+        {% endif %}
+        
+    </div>
+
+    {% if not is_login %}
+    <script>
+        // Ajax polling for active student lists
+        function fetchStudents() {
+            fetch('/pengawas/api/students')
+            .then(res => res.json())
+            .then(data => {
+                // Update counter
+                document.getElementById('studentCounter').innerText = `${data.length} Peserta Ujian`;
+                
+                // Update table body
+                const tbody = document.getElementById('studentTableBody');
+                tbody.innerHTML = '';
+                
+                if (data.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#64748b;">Belum ada siswa yang masuk ke ujian.</td></tr>`;
+                    return;
+                }
+                
+                data.forEach(s => {
+                    let statusLabel = '';
+                    let actionButtons = '';
+                    let tokenCell = '-';
+                    let scoreCell = '-';
+                    
+                    if (s.status === 'aktif') {
+                        statusLabel = `<span class="status-badge aktif"><span style="width:6px;height:6px;border-radius:50%;background:#10b981;"></span>Aktif</span>`;
+                    } else if (s.status === 'terkunci') {
+                        statusLabel = `<span class="status-badge terkunci">⚠️ Terkunci</span>`;
+                        tokenCell = `<span class="student-lock-key">${s.token_baru || '-'}</span>`;
+                        // Unlock action possible
+                        actionButtons = `<button class="btn-table btn-table-unlock" onclick="unlockStudent('${s.nama}')">Buka Kunci</button>`;
+                    } else if (s.status === 'selesai') {
+                        statusLabel = `<span class="status-badge selesai">✓ Selesai</span>`;
+                        scoreCell = `<strong style="color: #60a5fa;">${s.score}</strong>`;
+                    }
+                    
+                    // Reset action is always available to clear session in emergency
+                    actionButtons += `<button class="btn-table btn-table-reset" onclick="resetStudent('${s.nama}')">Reset/Kick</button>`;
+                    
+                    const row = `
+                        <tr>
+                            <td class="student-name-col">${s.nama}</td>
+                            <td>${s.kelas} - ${s.jurusan}</td>
+                            <td>${statusLabel}</td>
+                            <td style="text-align:center;">${tokenCell}</td>
+                            <td style="text-align:center;">${scoreCell}</td>
+                            <td>${actionButtons}</td>
+                        </tr>
+                    `;
+                    tbody.insertAdjacentHTML('beforeend', row);
+                });
+            })
+            .catch(err => console.error("Error loading active students", err));
+        }
+
+        // Functions to interact with proctor APIs
+        function unlockStudent(name) {
+            if (confirm(`Apakah Anda yakin ingin membuka kunci lembar ujian untuk ${name} secara remote?`)) {
+                fetch(`/pengawas/api/unlock/${encodeURIComponent(name)}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        fetchStudents();
+                    } else {
+                        alert("Gagal membuka kunci");
+                    }
+                });
+            }
+        }
+
+        function resetStudent(name) {
+            if (confirm(`Apakah Anda yakin ingin MELAKUKAN RESET sesi untuk ${name}? Semua data pengerjaan aktif akan hilang dan siswa harus login ulang.`)) {
+                fetch(`/pengawas/api/reset/${encodeURIComponent(name)}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        fetchStudents();
+                    } else {
+                        alert("Gagal mereset sesi");
+                    }
+                });
+            }
+        }
+
+        function updateInitialToken() {
+            const tokenVal = document.getElementById('newTokenVal').value.trim().toUpperCase();
+            if (!tokenVal) {
+                alert("Token tidak boleh kosong!");
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('new_token', tokenVal);
+            
+            fetch('/pengawas/api/update_token', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById('activeTokenDisplay').innerText = data.new_token;
+                    alert(`Token gerbang utama berhasil diubah menjadi: ${data.new_token}`);
+                } else {
+                    alert("Coba lagi, gagal merubah token");
+                }
+            });
+        }
+
+        // Poll states every 3 seconds to keep proctor synced
+        fetchStudents();
+        setInterval(fetchStudents, 3000);
+    </script>
+    {% endif %}
+
+</body>
+</html>

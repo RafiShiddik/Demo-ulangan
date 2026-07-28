@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lembar Jawaban Ujian | SMK Budi Murni 2</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #0b1329;
+            color: #e2e8f0;
+            padding: 40px 20px;
+            min-height: 100vh;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        /* Identity Banner */
+        .identity-banner {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            padding: 20px 30px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .student-profile {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .profile-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.15);
+            border: 2px solid #3b82f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #3b82f6;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .student-info h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        .student-info p {
+            font-size: 14px;
+            color: #94a3b8;
+        }
+        .badge-status {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #34d399;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #10b981;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        /* Exam Card */
+        .exam-card {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+        }
+        .exam-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .exam-header h2 {
+            font-size: 22px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        .exam-header p {
+            font-size: 14px;
+            color: #64748b;
+            margin-top: 5px;
+        }
+
+        /* Questions list */
+        .question-box {
+            margin-bottom: 40px;
+            padding-bottom: 30px;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+        }
+        .question-box:last-of-type {
+            border-bottom: none;
+            margin-bottom: 20px;
+        }
+        .question-text {
+            font-size: 16px;
+            font-weight: 500;
+            color: #f1f5f9;
+            line-height: 1.7;
+            margin-bottom: 20px;
+        }
+        .options-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .option-label {
+            display: flex;
+            align-items: center;
+            padding: 14px 20px;
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .option-label:hover {
+            background: rgba(59, 130, 246, 0.08);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+        .option-label input[type="radio"] {
+            margin-right: 15px;
+            accent-color: #3b82f6;
+            width: 18px;
+            height: 18px;
+        }
+        .option-text-val {
+            font-size: 15px;
+            color: #cbd5e1;
+        }
+        /* Checked state styling via JS class target */
+        .option-label.selected {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: #3b82f6;
+        }
+        .option-label.selected .option-text-val {
+            color: #ffffff;
+            font-weight: 500;
+        }
+
+        /* Submit Button */
+        .btn-submit {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(90deg, #10b981, #059669);
+            border: none;
+            border-radius: 14px;
+            color: #ffffff;
+            font-size: 17px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+        .btn-submit:hover {
+            background: linear-gradient(90deg, #059669, #047857);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        /* Delimiter math style */
+        .math-fraction {
+            display: inline-block;
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 6px;
+            font-family: 'Cambria Math', 'Cambria', serif;
+            font-style: italic;
+        }
+        .math-num {
+            display: block;
+            border-bottom: 1.5px solid #cbd5e1;
+            padding: 0 2px;
+            line-height: 1.1;
+        }
+        .math-den {
+            display: block;
+            padding: 0 2px;
+            line-height: 1.1;
+        }
+        sup {
+            font-size: 0.7em;
+            line-height: inherit;
+        }
+
+        /* Anti-cheat Fullscreen overlay lock */
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(11, 15, 26, 0.98);
+            z-index: 9999;
+            color: white;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .overlay.locked {
+            display: flex;
+        }
+        .overlay-content {
+            background: #1e293b;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            box-shadow: 0 25px 50px -12px rgba(239, 68, 68, 0.25);
+            padding: 40px 30px;
+            border-radius: 24px;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+        }
+        .overlay-icon {
+            font-size: 64px;
+            color: #ef4444;
+            margin-bottom: 20px;
+            animation: bounce 2s infinite;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .overlay h2 {
+            color: #ef4444;
+            font-weight: 700;
+            font-size: 26px;
+            margin-bottom: 15px;
+        }
+        .overlay p {
+            color: #94a3b8;
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+        .token-lock-input {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: #0f172a;
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            font-weight: 700;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            outline: none;
+            margin-bottom: 20px;
+        }
+        .token-lock-input:focus {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+        }
+        .btn-unlock {
+            width: 100%;
+            padding: 14px;
+            background: #ef4444;
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-unlock:hover {
+            background: #dc2626;
+        }
+        .alert-error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #fca5a5;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Fullscreen Locking Overlay -->
+    <div id="lockOverlay" class="overlay {% if status == 'terkunci' %}locked{% endif %}">
+        <div class="overlay-content">
+            <div class="overlay-icon">🔒</div>
+            <h2>Ujian Terkunci!</h2>
+            <p>Sistem mendeteksi Anda membuka tab/aplikasi baru atau keluar dari halaman fokus lembar ujian.</p>
+            <p style="color: #cbd5e1; font-weight: 500; font-size:14px; background: rgba(0,0,0,0.15); padding: 10px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.05);">
+                Hubungi Pengawas di kelas untuk meminta <strong>Token Baru</strong> yang di-generate sistem. Silakan beritahukan nama Anda untuk dicari tokennya.
+            </p>
+            
+            {% if error %}
+            <div class="alert-error">{{ error }}</div>
+            {% endif %}
+            
+            <form action="{{ url_for('unlock') }}" method="POST">
+                <input type="text" name="token_input" class="token-lock-input" placeholder="KODE TOKEN" maxlength="8" required autocomplete="off">
+                <button type="submit" class="btn-unlock">Buka Lembar Ujian</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Active Exam Layout -->
+    <div class="container">
+        <!-- Student Info Header -->
+        <div class="identity-banner">
+            <div class="student-profile">
+                <div class="profile-avatar">
+                    {{ session.get('siswa', 'S')[0] | upper }}
+                </div>
+                <div class="student-info">
+                    <h3>{{ session.get('siswa') }}</h3>
+                    <p>Kelas: {{ session.get('kelas') }} | Jurusan: {{ session.get('jurusan') }}</p>
+                </div>
+            </div>
+            <div class="badge-status">
+                <span class="live-dot"></span>
+                <span>STATUS: UJIAN AKTIF</span>
+            </div>
+        </div>
+
+        <!-- Exam Paper Card -->
+        <div class="exam-card">
+            <div class="exam-header">
+                <h2>Ujian Ulangan Harian Matematika</h2>
+                <p>Jawablah seluruh pertanyaan pilihan ganda di bawah ini dengan teliti. Dilarang bekerja sama atau berpindah halaman.</p>
+            </div>
+
+            <form id="ujianForm" action="{{ url_for('submit') }}" method="POST">
+                
+                {% for q in questions %}
+                <div class="question-box">
+                    <div class="question-text">
+                        <strong>{{ q.index }}.</strong> {{ q.question | safe }}
+                    </div>
+                    <div class="options-list">
+                        {% for key, val in q.choices.items() %}
+                        {% if val %}
+                        <label class="option-label" onclick="selectRadio(this)">
+                            <input type="radio" name="q{{ q.index }}" value="{{ key }}" required>
+                            <span class="option-text-val"><strong>{{ key }}.</strong> {{ val | safe }}</span>
+                        </label>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+
+                <button type="submit" class="btn-submit">Kirim Jawaban Ujian</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Highlighting radio selection changes
+        function selectRadio(element) {
+            const container = element.closest('.options-list');
+            const labels = container.querySelectorAll('.option-label');
+            labels.forEach(lbl => lbl.classList.remove('selected'));
+            element.classList.add('selected');
+        }
+
+        let isLocked = false;
+        async function triggerLockout() {
+            if (isLocked) return;
+            isLocked = true;
+            
+            // Instantly clear the document body content to hide questions & prevent form manipulations
+            document.body.innerHTML = `
+                <div style="
+                    display: flex; 
+                    flex-direction: column; 
+                    justify-content: center; 
+                    align-items: center; 
+                    height: 100vh; 
+                    background-color: #0b0f1a; 
+                    color: #ef4444; 
+                    font-family: 'Inter', sans-serif; 
+                    text-align: center; 
+                    padding: 20px;
+                ">
+                    <div style="font-size: 80px; margin-bottom: 20px;">🔒</div>
+                    <h1 style="font-size: 32px; font-weight: 700; margin-bottom: 10px;">Sesi Ujian Dikunci!</h1>
+                    <p style="color: #94a3b8; font-size: 18px; max-width: 500px; line-height: 1.6; margin: 0 0 30px 0;">
+                        Sistem mendeteksi Anda meninggalkan pengerjaan ujian. Mengalihkan ke halaman log out...
+                    </p>
+                </div>
+            `;
+            
+            try {
+                // Gunakan await untuk memastikan request lock selesai diproses server sebelum
+                // browser dialihkan ke halaman login, sehingga menghapus session secara sempurna.
+                await fetch('/lock', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            } catch (err) {
+                console.error("Gagal melakukan pelaporan kunci ke server:", err);
+            }
+            
+            // Redirect instan ke halaman login awal dengan detail keterangan lockout
+            window.location.href = '/login?error=Anda telah keluar karena membuka tab pengerjaan. Silakan hubungi pengawas untuk mendapatkan token baru.';
+        }
+
+        // 1. Detect switching browser tabs / minimizing window
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden') {
+                triggerLockout();
+            }
+        });
+
+        // 2. Detect leaving window focus (Alt-Tab, resizing, clicking outside)
+        window.addEventListener('blur', function() {
+            triggerLockout();
+        });
+
+        // 3. Detect reloading, navigating away, or closing the tab
+        window.addEventListener('beforeunload', function() {
+            if (!isLocked) {
+                // Kirim sinyal penguncian instan secara synchronous/keepalive
+                fetch('/lock', {
+                    method: 'POST',
+                    keepalive: true,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+        });
+
+        // 4. Fallback checking: ensure document has focus every 200ms (lebih responsif dibanding 1s)
+        setInterval(function() {
+            if (!document.hasFocus() && !isLocked) {
+                triggerLockout();
+            }
+        }, 200);
+
+        // 5. Query status from backend every 2 seconds to check if locked
+        function checkStudentStatus() {
+            if (isLocked) return;
+            fetch('/student/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'terkunci') {
+                        triggerLockout();
+                    }
+                })
+                .catch(err => console.error("Gagal memeriksa status sesi:", err));
+        }
+        setInterval(checkStudentStatus, 2000);
+
+        // 3. Simple anti-cheat page protections (F12, right click block)
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('keydown', e => {
+            if (e.key === 'F12' || 
+                (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'C' || e.key === 'c' || e.key === 'J' || e.key === 'j')) || 
+                (e.ctrlKey && (e.key === 'U' || e.key === 'u' || e.key === 'S' || e.key === 's'))) {
+                e.preventDefault();
+                alert('Tindakan ini diblokir demi keamanan ujian!');
+            }
+        });
+    </script>
+</body>
+</html>

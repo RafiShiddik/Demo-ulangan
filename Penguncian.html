@@ -1,0 +1,28 @@
+<?php
+session_start();
+
+if (isset($_SESSION['siswa']) && $_SESSION['status'] !== 'terkunci') {
+    $_SESSION['status'] = 'terkunci';
+    
+    // Membuat token acak acak 6 karakter
+    $token_baru = strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 6));
+    $_SESSION['token_baru'] = $token_baru;
+
+    // Bersihkan nama siswa dari karakter aneh untuk dijadikan nama file teks
+    $nama_clean = preg_replace('/[^A-Za-z0-9_\-]/', '_', $_SESSION['siswa']);
+    $nama_file = "data_token/" . $nama_clean . ".txt";
+
+    // Isi informasi teks yang disimpan di dalam file teks folder data_token
+    $isi_file = "=============================\n";
+    $isi_file .= "TOKEN BARU SISWA\n";
+    $isi_file .= "=============================\n";
+    $isi_file .= "Nama    : " . $_SESSION['siswa'] . "\n";
+    $isi_file .= "Kelas   : " . $_SESSION['kelas'] . "\n";
+    $isi_file .= "Jurusan : " . $_SESSION['jurusan'] . "\n";
+    $isi_file .= "Token   : " . $token_baru . "\n";
+    $isi_file .= "Waktu   : " . date("Y-m-d H:i:s") . "\n";
+
+    // Perintah untuk membuat file di dalam folder data_token/ [1]
+    file_put_contents($nama_file, $isi_file);
+}
+?>

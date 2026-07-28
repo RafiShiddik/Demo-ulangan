@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ujian Selesai! | SMK Budi Murni 2</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0b1329 0%, #1c2541 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px 20px;
+            color: #d1d5db;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 45px 35px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+        .success-icon {
+            font-size: 72px;
+            color: #10b981;
+            margin-bottom: 20px;
+            animation: scaleUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes scaleUp {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        h2 {
+            font-size: 28px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 10px;
+        }
+        .msg {
+            color: #94a3b8;
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+        .score-display {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1.5px dashed rgba(16, 185, 129, 0.3);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 35px;
+            animation: fadeIn 1s;
+        }
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        .score-display .lbl {
+            font-size: 14px;
+            font-weight: 500;
+            color: #34d399;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+        .score-display .val {
+            font-size: 54px;
+            font-weight: 800;
+            color: #10b981;
+        }
+        .score-display .details {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-top: 5px;
+        }
+        /* Results Table checklist overlay */
+        .check-table {
+            width: 100%;
+            margin-bottom: 30px;
+            text-align: left;
+            border-collapse: collapse;
+        }
+        .check-table th {
+            padding: 10px 14px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+            color: #94a3b8;
+            font-size: 13px;
+        }
+        .check-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 14px;
+        }
+        .badge-result {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-correct {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+        }
+        .badge-false {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+        }
+        .btn-home {
+            display: inline-block;
+            width: 100%;
+            padding: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-home:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        .badge-info-clean {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            color: #93c5fd;
+            border-radius: 12px;
+            padding: 12px;
+            font-size: 13px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <div class="success-icon">✓</div>
+        <h2>Jawaban Berhasil Dikirim!</h2>
+        <p class="msg">Terima kasih, ujian Anda telah berhasil terekam ke sistem dan disimpan untuk dokumentasi sekolah.</p>
+        
+        <div class="score-display">
+            <div class="lbl">Nilai Ujian Anda</div>
+            <div class="val">{{ score }}</div>
+            <div class="details">SMK Budi Murni 2</div>
+        </div>
+
+        <div class="badge-info-clean">
+            Laporan detail hasil pengerjaan Anda telah diarsipkan ke dalam folder: <br>
+            <strong>hasil ujian/{{ session.get('kelas') }}/{{ session.get('jurusan') }}/{{ session.get('siswa') }}/</strong>
+        </div>
+
+        <table class="check-table">
+            <thead>
+                <tr>
+                    <th>No. Soal</th>
+                    <th>Jawaban Anda</th>
+                    <th>Jawaban Kunci</th>
+                    <th>Hasil</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in details %}
+                <tr>
+                    <td><strong>Soal {{ d.index }}</strong></td>
+                    <td style="text-align: center;">{{ d.student_answer or '-' }}</td>
+                    <td style="text-align: center;">{{ d.correct_answer }}</td>
+                    <td>
+                        {% if d.is_correct %}
+                        <span class="badge-result badge-correct">✓ BETUL</span>
+                        {% else %}
+                        <span class="badge-result badge-false">✗ SALAH</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <a href="{{ url_for('login') }}" class="btn-home">Kembali ke Halaman Masuk</a>
+    </div>
+
+</body>
+</html>
