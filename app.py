@@ -2,8 +2,12 @@ import os
 import re
 import random
 import string
+import time
+import urllib.request
+import email.utils
 from datetime import datetime
 import docx
+
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 
 app = Flask(__name__, static_folder='.', static_url_path='')
@@ -29,6 +33,15 @@ def clean_filename(name):
     """Clean student name to make it safe for file writing and session indexing."""
     cleaned = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
     return cleaned.strip('_').lower()
+
+def generate_unique_exam_token():
+    """Generates a unique 6-character alphanumeric token for each student."""
+    existing_tokens = {s.get('exam_token') for s in ACTIVE_STUDENTS.values() if s.get('exam_token')}
+    while True:
+        token = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        if token not in existing_tokens:
+            return token
+
 
 def parse_docx_math(el):
     """Recursively parse Office Math elements from DOCX XML to output clean HTML tags."""
@@ -61,93 +74,301 @@ def parse_docx_math(el):
     
     return ''.join(parse_docx_math(c) for c in el)
 
-def load_questions():
-    """Load questions and options dynamically from DOCX file."""
-    path = 'soal matematika/soal ulangan pilihan ganda.docx'
-    if not os.path.exists(path):
-        return []
+def extract_images_from_docx(doc_path, class_name):
+    """Extracts all images from a docx file and saves them to a static directory."""
+    if not os.path.exists(doc_path):
+        return {}
+    doc = docx.Document(doc_path)
+    output_dir = f"static/extracted_images/{class_name}"
+    os.makedirs(output_dir, exist_ok=True)
     
-    doc = docx.Document(path)
+    saved_images = {}
+    for rId, part in doc.part.related_parts.items():
+        if 'image' in part.content_type:
+            ext = 'png'
+            if '/' in part.content_type:
+                ext = part.content_type.split('/')[1]
+            
+            img_filename = f"{rId}.{ext}"
+            img_path = os.path.join(output_dir, img_filename)
+            
+            try:
+                with open(img_path, 'wb') as f:
+                    f.write(part._blob)
+                saved_images[rId] = f"/static/extracted_images/{class_name}/{img_filename}"
+            except Exception:
+                pass
+                
+    return saved_images
+
+def scan_soal_directory():
+    """Scans 'soal matematika/' and returns a dict mapping kelas -> list of available materis."""
+    base_dir = 'soal matematika'
+    materi_map = {}
+    if not os.path.exists(base_dir):
+        return materi_map
+        
+    for item in sorted(os.listdir(base_dir)):
+        class_path = os.path.join(base_dir, item)
+        if os.path.isdir(class_path):
+            kelas_key = item.replace('Kelas ', '').replace('kelas ', '').strip()
+            materis = []
+            for sub in sorted(os.listdir(class_path)):
+                sub_path = os.path.join(class_path, sub)
+                if os.path.isdir(sub_path):
+                    materis.append(sub)
+            if not materis:
+                docx_files = [f for f in os.listdir(class_path) if f.endswith('.docx')]
+                if docx_files:
+                    materis.append('Matematika Umum')
+            if materis:
+                materi_map[kelas_key] = materis
+            
+    return materi_map
+
+def find_materi_folder(kelas, materi=None):
+    """Finds the path to the specified class and materi folder."""
+    base_dir = 'soal matematika'
+    if not os.path.exists(base_dir):
+        return None
+    target_class_dir = None
+    for item in os.listdir(base_dir):
+        if os.path.isdir(os.path.join(base_dir, item)):
+            k_key = item.replace('Kelas ', '').replace('kelas ', '').strip()
+            if k_key.upper() == kelas.upper():
+                target_class_dir = os.path.join(base_dir, item)
+                break
+                
+    if not target_class_dir:
+        return None
+        
+    if materi:
+        materi_dir = os.path.join(target_class_dir, materi)
+        if os.path.exists(materi_dir) and os.path.isdir(materi_dir):
+            return materi_dir
+            
+    subs = [os.path.join(target_class_dir, s) for s in os.listdir(target_class_dir) if os.path.isdir(os.path.join(target_class_dir, s))]
+    if subs:
+        return subs[0]
+        
+    return target_class_dir
+
+def load_questions(kelas, materi=None):
+    """Load multiple choice questions dynamically from DOCX file."""
+    folder_path = find_materi_folder(kelas, materi)
+    if not folder_path or not os.path.exists(folder_path):
+        return []
+
+    pg_path = None
+    for f in os.listdir(folder_path):
+        if f.endswith('.docx') and 'kunci' not in f.lower() and 'essay' not in f.lower() and 'esai' not in f.lower():
+            pg_path = os.path.join(folder_path, f)
+            break
+            
+    if not pg_path:
+        for f in os.listdir(folder_path):
+            if f.endswith('.docx') and 'kunci' not in f.lower():
+                pg_path = os.path.join(folder_path, f)
+                break
+                
+    if not pg_path or not os.path.exists(pg_path):
+        return []
+
+    images_map = extract_images_from_docx(pg_path, kelas)
+    doc = docx.Document(pg_path)
     paragraphs_text = []
     
     for p in doc.paragraphs:
-        parts = []
-        for child in p._element:
-            parts.append(parse_docx_math(child))
-        paragraphs_text.append(''.join(parts).strip())
+        parts = [parse_docx_math(child) for child in p._element]
+        p_text = ''.join(parts).strip()
         
+        blips = []
+        def find_blips(el):
+            tag = el.tag.split('}')[-1]
+            if tag == 'blip':
+                for k, v in el.attrib.items():
+                    if k.endswith('embed'):
+                        blips.append(v)
+            for child in el:
+                find_blips(child)
+        find_blips(p._element)
+        
+        img_htmls = []
+        for rId in blips:
+            if rId in images_map:
+                img_htmls.append(f'<div class="exam-image-container"><img class="exam-image" src="{images_map[rId]}" alt="Gambar Soal"></div>')
+        
+        if img_htmls:
+            if p_text:
+                p_text = p_text + "<br>" + "".join(img_htmls)
+            else:
+                p_text = "".join(img_htmls)
+            
+        if p_text:
+            if p_text.lower().startswith('apa itu') or p_text.lower().startswith('peringatan') or p_text.lower() == 'pilihan ganda' or p_text.lower() == 'soal pilihan ganda':
+                continue
+            paragraphs_text.append(p_text)
+            
     questions = []
-    # Loop paragraphs in groups of 3 (Q, Options ACE, Options BD)
-    for idx in range(0, len(paragraphs_text), 3):
-        if idx + 2 >= len(paragraphs_text):
-            break
-        q_text = paragraphs_text[idx]
-        opt_ace = paragraphs_text[idx+1]
-        opt_bd = paragraphs_text[idx+2]
-        
-        # Regex/indexing extraction of choices
-        a_text = ""
-        c_text = ""
-        e_text = ""
-        
-        c_idx = opt_ace.find('c.')
-        e_idx = opt_ace.find('e.')
-        
-        if c_idx != -1 and e_idx != -1:
-            a_text = opt_ace[:c_idx].strip()
-            c_text = opt_ace[c_idx+2:].strip()
-            e_idx_rel = c_text.find('e.')
-            if e_idx_rel != -1:
-                e_text = c_text[e_idx_rel+2:].strip()
-                c_text = c_text[:e_idx_rel].strip()
-        else:
-            a_text = opt_ace
-            
-        b_text = ""
-        d_text = ""
-        d_idx = opt_bd.find('d.')
-        if d_idx != -1:
-            b_text = opt_bd[:d_idx].strip()
-            d_text = opt_bd[d_idx+2:].strip()
-        else:
-            b_text = opt_bd
-            
-        def clean_opt(txt):
-            txt = txt.strip()
-            txt = re.sub(r'^[a-eA-E]\.\s*', '', txt)
-            return txt
+    
+    def clean_opt(txt):
+        txt = txt.strip()
+        txt = re.sub(r'^[a-eA-E][\.\)]\s*', '', txt)
+        return txt
 
-        choices = {
-            'A': clean_opt(a_text),
-            'B': clean_opt(b_text),
-            'C': clean_opt(c_text),
-            'D': clean_opt(d_text),
-            'E': clean_opt(e_text)
-        }
-        
-        questions.append({
-            'index': len(questions) + 1,
-            'question': q_text,
-            'choices': choices
-        })
-        
+    if kelas.upper() == 'XII':
+        groups = [
+            ([0], [1, 2, 3, 4, 5]),
+            ([6], [7, 8, 9, 10, 11]),
+            ([12, 13, 14, 15, 16], [17, 18, 19, 20, 21]),
+            ([25, 26], [27, 28, 29, 30, 31]),
+            ([32], [33, 34, 35, 36, 37]),
+            ([38], [39, 40, 41, 42, 43]),
+            ([44], [45, 46, 47, 48, 49]),
+            ([50], [51, 52, 53, 54, 55]),
+            ([56], [57, 58, 59, 60, 61])
+        ]
+        letters = ['A', 'B', 'C', 'D', 'E']
+        for g_idx, (q_ind, opt_ind) in enumerate(groups):
+            q_text = "<br>".join([paragraphs_text[idx] for idx in q_ind if idx < len(paragraphs_text)])
+            choices = {}
+            for i, o_idx in enumerate(opt_ind):
+                if o_idx < len(paragraphs_text) and i < len(letters):
+                    choices[letters[i]] = clean_opt(paragraphs_text[o_idx])
+            if q_text:
+                questions.append({
+                    'index': len(questions) + 1,
+                    'question': re.sub(r'^\d+[\.\)]\s*', '', q_text),
+                    'choices': choices
+                })
+    else:
+        if len(paragraphs_text) >= 45:
+            for q_idx in range(5):
+                base = q_idx * 3
+                q_text = paragraphs_text[base]
+                opt_ace = paragraphs_text[base+1]
+                opt_bd = paragraphs_text[base+2]
+                
+                a_text = ""
+                c_text = ""
+                e_text = ""
+                c_idx = opt_ace.find('c.')
+                e_idx = opt_ace.find('e.')
+                if c_idx != -1 and e_idx != -1:
+                    a_text = opt_ace[:c_idx].strip()
+                    c_text = opt_ace[c_idx+2:e_idx].strip()
+                    e_text = opt_ace[e_idx+2:].strip()
+                elif c_idx != -1:
+                    a_text = opt_ace[:c_idx].strip()
+                    c_text = opt_ace[c_idx+2:].strip()
+                else:
+                    a_text = opt_ace
+                    
+                b_text = ""
+                d_text = ""
+                d_idx = opt_bd.find('d.')
+                if d_idx != -1:
+                    b_text = opt_bd[:d_idx].strip()
+                    d_text = opt_bd[d_idx+2:].strip()
+                else:
+                    b_text = opt_bd
+                    
+                choices = {
+                    'A': clean_opt(a_text),
+                    'B': clean_opt(b_text),
+                    'C': clean_opt(c_text),
+                    'D': clean_opt(d_text),
+                    'E': clean_opt(e_text)
+                }
+                questions.append({'index': q_idx + 1, 'question': re.sub(r'^\d+[\.\)]\s*', '', q_text), 'choices': choices})
+                
+            q_base = 15
+            for q_idx in range(5, 10):
+                if q_base < len(paragraphs_text):
+                    q_text = paragraphs_text[q_base]
+                    opts = paragraphs_text[q_base+1:q_base+6]
+                    q_base += 6
+                    choices = {}
+                    letters = ['A', 'B', 'C', 'D', 'E']
+                    for i, o in enumerate(opts):
+                        if i < len(letters):
+                            choices[letters[i]] = clean_opt(o)
+                    questions.append({'index': q_idx + 1, 'question': re.sub(r'^\d+[\.\)]\s*', '', q_text), 'choices': choices})
+        else:
+            for idx in range(0, len(paragraphs_text), 3):
+                if idx + 2 >= len(paragraphs_text):
+                    break
+                q_text = paragraphs_text[idx]
+                opt_ace = paragraphs_text[idx+1]
+                opt_bd = paragraphs_text[idx+2]
+                
+                a_text = ""
+                c_text = ""
+                e_text = ""
+                c_idx = opt_ace.find('c.')
+                e_idx = opt_ace.find('e.')
+                if c_idx != -1 and e_idx != -1:
+                    a_text = opt_ace[:c_idx].strip()
+                    c_text = opt_ace[c_idx+2:].strip()
+                    e_idx_rel = c_text.find('e.')
+                    if e_idx_rel != -1:
+                        e_text = c_text[e_idx_rel+2:].strip()
+                        c_text = c_text[:e_idx_rel].strip()
+                else:
+                    a_text = opt_ace
+                    
+                b_text = ""
+                d_text = ""
+                d_idx = opt_bd.find('d.')
+                if d_idx != -1:
+                    b_text = opt_bd[:d_idx].strip()
+                    d_text = opt_bd[d_idx+2:].strip()
+                else:
+                    b_text = opt_bd
+                    
+                choices = {
+                    'A': clean_opt(a_text),
+                    'B': clean_opt(b_text),
+                    'C': clean_opt(c_text),
+                    'D': clean_opt(d_text),
+                    'E': clean_opt(e_text)
+                }
+                questions.append({
+                    'index': len(questions) + 1,
+                    'question': re.sub(r'^\d+[\.\)]\s*', '', q_text),
+                    'choices': choices
+                })
+            
     return questions
 
-def load_answers():
-    """Load answer keys dynamically from DOCX file."""
-    path = 'soal matematika/Kunci jawaban.docx'
-    if not os.path.exists(path):
+def load_answers(kelas, materi=None):
+    """Load answer keys dynamically from DOCX file based on class and materi."""
+    folder_path = find_materi_folder(kelas, materi)
+    if not folder_path or not os.path.exists(folder_path):
         return {}
-    
-    doc = docx.Document(path)
+        
+    key_path = None
+    for f in os.listdir(folder_path):
+        if 'kunci' in f.lower() and 'essay' not in f.lower() and 'esai' not in f.lower():
+            key_path = os.path.join(folder_path, f)
+            break
+            
+    if not key_path:
+        for f in os.listdir(folder_path):
+            if 'kunci' in f.lower():
+                key_path = os.path.join(folder_path, f)
+                break
+                
+    if not key_path or not os.path.exists(key_path):
+        return {}
+        
+    doc = docx.Document(key_path)
     answers = {}
     q_index = 1
     
     for p in doc.paragraphs:
         txt = p.text.strip().upper()
-        if not txt:
-            continue
-        if 'KUNCI' in txt or 'JAWABAN' in txt:
+        if not txt or 'KUNCI' in txt or 'JAWABAN' in txt:
             continue
         match = re.search(r'[A-E]', txt)
         if match:
@@ -156,36 +377,159 @@ def load_answers():
             
     return answers
 
+def load_essay_questions(kelas, materi=None):
+    """Load essay questions dynamically from DOCX file if available (guaranteed 5 questions)."""
+    folder_path = find_materi_folder(kelas, materi)
+    if not folder_path or not os.path.exists(folder_path):
+        return []
+        
+    essay_path = None
+    for f in os.listdir(folder_path):
+        if ('essay' in f.lower() or 'esai' in f.lower()) and 'kunci' not in f.lower() and f.endswith('.docx'):
+            essay_path = os.path.join(folder_path, f)
+            break
+            
+    if not essay_path or not os.path.exists(essay_path):
+        return []
+        
+    doc = docx.Document(essay_path)
+    raw_paragraphs = []
+    for p in doc.paragraphs:
+        parts = [parse_docx_math(child) for child in p._element]
+        t = ''.join(parts).strip()
+        if t:
+            t_low = t.lower()
+            if t_low.startswith('peringatan') or 'harap kumpulkan' in t_low or t_low == 'essay !' or t_low == 'essay' or 'isikan caranya' in t_low:
+                continue
+            raw_paragraphs.append(t)
+            
+    if kelas.upper() == 'XII':
+        essay_groups = [
+            [0, 1],
+            [2],
+            [3],
+            [4],
+            [5]
+        ]
+        essay_questions = []
+        for idx, grp in enumerate(essay_groups):
+            q_text = "<br>".join([raw_paragraphs[i] for i in grp if i < len(raw_paragraphs)])
+            essay_questions.append({
+                'index': idx + 1,
+                'question': re.sub(r'^\d+[\.\)]\s*', '', q_text)
+            })
+        return essay_questions
+
+    questions = []
+    for p in raw_paragraphs:
+        clean_p = re.sub(r'^\d+[\.\)]\s*', '', p)
+        p_lower = clean_p.lower()
+        
+        is_sub = False
+        if questions:
+            if p_lower.startswith('tentukan') or p_lower.startswith('hitunglah') or p_lower.startswith('jika g(x)') or re.match(r'^[a-z][\.\)]\s*', p_lower):
+                is_sub = True
+                
+        if is_sub and questions:
+            questions[-1]['text'] += '<br>' + clean_p
+        else:
+            questions.append({
+                'text': clean_p
+            })
+            
+    essay_questions = []
+    for idx, q in enumerate(questions):
+        essay_questions.append({
+            'index': idx + 1,
+            'question': q['text']
+        })
+    return essay_questions
+
+
+def get_shuffled_questions_for_student(student_state):
+    """
+    Given student state, returns the list of questions for their class and materi,
+    with questions ordered according to student_state['question_order'],
+    and choices for each question shuffled according to student_state['shuffled_choices'].
+    """
+    kelas = student_state.get('kelas', 'XI')
+    materi = student_state.get('materi', '')
+    questions_all = load_questions(kelas, materi)
+    q_map = {q['index']: q for q in questions_all}
+    
+    shuffled_questions = []
+    student_order = student_state.get('question_order', [])
+    shuffled_choices = student_state.get('shuffled_choices', {})
+    
+    for idx in student_order:
+        if idx not in q_map:
+            continue
+        q = q_map[idx]
+        orig_choices = q['choices']
+        
+        if str(idx) in shuffled_choices or idx in shuffled_choices:
+            mapping = shuffled_choices.get(idx) or shuffled_choices.get(str(idx))
+            new_choices = {}
+            for disp_letter in sorted(mapping.keys()):
+                orig_letter = mapping[disp_letter]
+                new_choices[disp_letter] = orig_choices.get(orig_letter, '')
+        else:
+            new_choices = orig_choices
+            
+        shuffled_questions.append({
+            'index': idx,
+            'question': q['question'],
+            'choices': new_choices
+        })
+        
+    return shuffled_questions
+
+
 
 @app.route('/')
 def index():
     if 'siswa' in session:
-        return redirect(url_for('ujian'))
+        status = session.get('status', 'konfirmasi')
+        if status == 'aktif':
+            return redirect(url_for('ujian'))
+        elif status == 'selesai':
+            return redirect(url_for('selesai'))
+        else:
+            return redirect(url_for('konfirmasi'))
     return redirect(url_for('login'))
+
+@app.route('/api/materis/<kelas>')
+def api_materis(kelas):
+    materi_map = scan_soal_directory()
+    norm_kelas = kelas.replace('Kelas ', '').replace('kelas ', '').strip().upper()
+    materis = []
+    for k, v in materi_map.items():
+        if k.upper() == norm_kelas:
+            materis = v
+            break
+    if not materis:
+        materis = ['Matematika Umum']
+    return jsonify({'kelas': kelas, 'materis': materis})
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # If student is already in session but locked in backend, clear their session keys so they must re-authenticate
-    if 'nama_clean' in session:
-        nama_clean = session['nama_clean']
-        if nama_clean in ACTIVE_STUDENTS and ACTIVE_STUDENTS[nama_clean]['status'] == 'terkunci':
-            session.pop('siswa', None)
-            session.pop('nama_clean', None)
-            session.pop('status', None)
-
     if request.method == 'POST':
         nama = request.form.get('nama', '').strip()
         kelas = request.form.get('kelas', '').strip()
         jurusan = request.form.get('jurusan', '').strip()
-        token = request.form.get('token', '').strip().upper()
+        materi = request.form.get('materi', '').strip()
         
-        if not nama or not kelas or not jurusan or not token:
+        if not nama or not kelas or not jurusan:
             return render_template('login.html', error='Semua kolom wajib diisi!')
+            
+        materi_map = scan_soal_directory()
+        avail_materis = materi_map.get(kelas, [])
+        if not materi and avail_materis:
+            materi = avail_materis[0]
             
         nama_clean = clean_filename(nama)
         
-        # Check if student name already registered in active lists
         if nama_clean in ACTIVE_STUDENTS:
             student_state = ACTIVE_STUDENTS[nama_clean]
             
@@ -193,130 +537,186 @@ def login():
                 return render_template('login.html', error='Anda telah menyelesaikan ujian ini!')
                 
             if student_state['status'] == 'terkunci':
-                # Verify against student-specific token_baru
-                expected_token = student_state['token_baru']
-                if token == expected_token:
-                    # Unlock student and log them back in
-                    ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
-                    ACTIVE_STUDENTS[nama_clean]['token_baru'] = ''
-                    ACTIVE_STUDENTS[nama_clean]['lock_time'] = None
-                    
-                    # Remove student token file
-                    filepath = f"data_token/{nama_clean}.txt"
-                    if os.path.exists(filepath):
-                        try:
-                            os.remove(filepath)
-                        except Exception:
-                            pass
-                            
-                    session['siswa'] = nama
-                    session['kelas'] = kelas
-                    session['jurusan'] = jurusan
-                    session['nama_clean'] = nama_clean
-                    session['status'] = 'aktif'
-                    
-                    return redirect(url_for('ujian'))
-                else:
-                    return render_template('login.html', error='Token masuk pengawas Anda salah atau tidak valid!')
+                session['siswa'] = student_state['nama']
+                session['kelas'] = student_state['kelas']
+                session['jurusan'] = student_state['jurusan']
+                session['materi'] = student_state['materi']
+                session['nama_clean'] = nama_clean
+                session['status'] = 'terkunci'
+                return redirect(url_for('konfirmasi'))
             
-            # If student is 'aktif' but session was lost/cleared (e.g. browser crash or remotely unlocked)
             if student_state['status'] == 'aktif':
-                if token == CONFIG['INITIAL_TOKEN']:
-                    session['siswa'] = nama
-                    session['kelas'] = kelas
-                    session['jurusan'] = jurusan
-                    session['nama_clean'] = nama_clean
-                    session['status'] = 'aktif'
-                    return redirect(url_for('ujian'))
-                else:
-                    return render_template('login.html', error='Token masuk salah!')
+                session['siswa'] = student_state['nama']
+                session['kelas'] = student_state['kelas']
+                session['jurusan'] = student_state['jurusan']
+                session['materi'] = student_state['materi']
+                session['nama_clean'] = nama_clean
+                session['status'] = 'aktif'
+                return redirect(url_for('ujian'))
+                
+            if student_state['status'] == 'konfirmasi':
+                session['siswa'] = student_state['nama']
+                session['kelas'] = student_state['kelas']
+                session['jurusan'] = student_state['jurusan']
+                session['materi'] = student_state['materi']
+                session['nama_clean'] = nama_clean
+                session['status'] = 'konfirmasi'
+                return redirect(url_for('konfirmasi'))
 
-        # Normal login with INITIAL_TOKEN (first-time entrance)
-        if token != CONFIG['INITIAL_TOKEN']:
-            return render_template('login.html', error='Token masuk salah!')
+        questions_all = load_questions(kelas, materi)
+        if not questions_all:
+            return render_template('login.html', error=f'Soal untuk kelas {kelas} ({materi}) belum tersedia!')
             
-        # Get questions and shuffle the order for this specific student
-        questions_all = load_questions()
         q_order = [q['index'] for q in questions_all]
-        random.shuffle(q_order)
+        if kelas.upper() != 'XII':
+            random.shuffle(q_order)
+        
+        shuffled_choices = {}
+        for q in questions_all:
+            q_idx = q['index']
+            orig_keys = [k for k, v in q['choices'].items() if v]
+            shuffled_keys = orig_keys.copy()
+            if kelas.upper() != 'XII':
+                random.shuffle(shuffled_keys)
             
-        # Register student in the global active list
+            mapping = {}
+            display_letters = ['A', 'B', 'C', 'D', 'E'][:len(orig_keys)]
+            for i, disp_char in enumerate(display_letters):
+                mapping[disp_char] = shuffled_keys[i]
+            shuffled_choices[q_idx] = mapping
+            
+        exam_token = generate_unique_exam_token()
+        
         ACTIVE_STUDENTS[nama_clean] = {
             'nama': nama,
             'kelas': kelas,
             'jurusan': jurusan,
-            'status': 'aktif',
+            'materi': materi,
+            'status': 'konfirmasi',
+            'exam_token': exam_token,
             'token_baru': '',
             'lock_time': None,
             'score': None,
             'answers': {},
-            'question_order': q_order
+            'essay_answers': {},
+            'question_order': q_order,
+            'shuffled_choices': shuffled_choices
         }
         
         session['siswa'] = nama
         session['kelas'] = kelas
         session['jurusan'] = jurusan
+        session['materi'] = materi
         session['nama_clean'] = nama_clean
-        session['status'] = 'aktif'
+        session['status'] = 'konfirmasi'
         
-        return redirect(url_for('ujian'))
+        return redirect(url_for('konfirmasi'))
         
     return render_template('login.html')
 
-
-@app.route('/ujian')
-def ujian():
-    if 'siswa' not in session:
+@app.route('/konfirmasi', methods=['GET', 'POST'])
+def konfirmasi():
+    if 'siswa' not in session or 'nama_clean' not in session:
         return redirect(url_for('login'))
         
     nama_clean = session['nama_clean']
+    if nama_clean not in ACTIVE_STUDENTS:
+        return redirect(url_for('login'))
+        
+    student_state = ACTIVE_STUDENTS[nama_clean]
     
-    # Sync with global state
+    if request.method == 'POST':
+        token_input = request.form.get('token', '').strip().upper()
+        if not token_input:
+            return render_template('konfirmasi.html', 
+                                   nama=session['siswa'], 
+                                   kelas=session['kelas'], 
+                                   jurusan=session['jurusan'], 
+                                   materi=session.get('materi', ''), 
+                                   error='Token wajib diisi!')
+                                   
+        if student_state['status'] == 'terkunci':
+            expected_token = student_state.get('token_baru', '')
+            if token_input == expected_token:
+                ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
+                ACTIVE_STUDENTS[nama_clean]['token_baru'] = ''
+                ACTIVE_STUDENTS[nama_clean]['lock_time'] = None
+                
+                filepath = f"data_token/{nama_clean}.txt"
+                if os.path.exists(filepath):
+                    try:
+                        os.remove(filepath)
+                    except Exception:
+                        pass
+                        
+                session['status'] = 'aktif'
+                return redirect(url_for('ujian'))
+            else:
+                return render_template('konfirmasi.html', 
+                                       nama=session['siswa'], 
+                                       kelas=session['kelas'], 
+                                       jurusan=session['jurusan'], 
+                                       materi=session.get('materi', ''), 
+                                       error='Token buka kunci dari pengawas Anda salah atau tidak valid!')
+        else:
+            expected_token = student_state.get('exam_token', '')
+            if token_input == expected_token:
+                ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
+                session['status'] = 'aktif'
+                return redirect(url_for('ujian'))
+            else:
+                return render_template('konfirmasi.html', 
+                                       nama=session['siswa'], 
+                                       kelas=session['kelas'], 
+                                       jurusan=session['jurusan'], 
+                                       materi=session.get('materi', ''), 
+                                       error='Token Ujian salah! Silakan tanyakan token unik Anda kepada pengawas.')
+                                       
+    if student_state['status'] == 'selesai':
+        return redirect(url_for('selesai'))
+    elif student_state['status'] == 'aktif':
+        return redirect(url_for('ujian'))
+        
+    error_msg = None
+    if student_state['status'] == 'terkunci':
+        error_msg = 'Sesi Anda terkunci karena meninggalkan halaman ujian. Silakan masukkan token buka kunci dari pengawas.'
+        
+    return render_template('konfirmasi.html', 
+                           nama=session['siswa'], 
+                           kelas=session['kelas'], 
+                           jurusan=session['jurusan'], 
+                           materi=session.get('materi', ''), 
+                           error=error_msg)
+
+@app.route('/ujian')
+def ujian():
+    if 'siswa' not in session or 'nama_clean' not in session:
+        return redirect(url_for('login'))
+        
+    nama_clean = session['nama_clean']
+    kelas = session['kelas']
+    materi = session.get('materi', '')
+    
     if nama_clean in ACTIVE_STUDENTS:
         status = ACTIVE_STUDENTS[nama_clean]['status']
         session['status'] = status
     else:
-        # Fallback if server restarted but cookie persists
-        questions_all = load_questions()
-        q_order = [q['index'] for q in questions_all]
-        random.shuffle(q_order)
+        return redirect(url_for('login'))
         
-        ACTIVE_STUDENTS[nama_clean] = {
-            'nama': session['siswa'],
-            'kelas': session['kelas'],
-            'jurusan': session['jurusan'],
-            'status': session.get('status', 'aktif'),
-            'token_baru': session.get('token_baru', ''),
-            'lock_time': None,
-            'score': None,
-            'answers': {},
-            'question_order': q_order
-        }
-        status = session.get('status', 'aktif')
+    if status == 'konfirmasi':
+        return redirect(url_for('konfirmasi'))
         
     if status == 'terkunci':
-        # Clear student session so they are logged out of the browser UI
-        session.pop('siswa', None)
-        session.pop('nama_clean', None)
-        session.pop('status', None)
-        return redirect(url_for('login', error='Anda telah keluar karena membuka tab pengerjaan. Silakan hubungi pengawas untuk mendapatkan token baru.'))
+        return redirect(url_for('konfirmasi'))
         
     if status == 'selesai':
         return redirect(url_for('selesai'))
         
-    questions_all = load_questions()
+    student_state = ACTIVE_STUDENTS[nama_clean]
+    questions = get_shuffled_questions_for_student(student_state)
+    essay_questions = load_essay_questions(kelas, materi)
     
-    # Sort the questions list based on this student's recorded question_order
-    student_order = ACTIVE_STUDENTS[nama_clean].get('question_order', [])
-    if not student_order:
-        student_order = [q['index'] for q in questions_all]
-        random.shuffle(student_order)
-        ACTIVE_STUDENTS[nama_clean]['question_order'] = student_order
-        
-    q_map = {q['index']: q for q in questions_all}
-    questions = [q_map[idx] for idx in student_order if idx in q_map]
-    
-    return render_template('ujian.html', questions=questions, status=status)
+    return render_template('ujian.html', questions=questions, essay_questions=essay_questions, materi=materi, status=status)
 
 
 @app.route('/lock', methods=['POST'])
@@ -329,12 +729,10 @@ def lock():
     if nama_clean in ACTIVE_STUDENTS and ACTIVE_STUDENTS[nama_clean]['status'] != 'selesai':
         ACTIVE_STUDENTS[nama_clean]['status'] = 'terkunci'
         
-        # Generate 6 character token
         token_baru = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         ACTIVE_STUDENTS[nama_clean]['token_baru'] = token_baru
         ACTIVE_STUDENTS[nama_clean]['lock_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # Write file in data_token/
         os.makedirs('data_token', exist_ok=True)
         filename = f"data_token/{nama_clean}.txt"
         
@@ -344,6 +742,7 @@ def lock():
             "=============================\n"
             f"Nama    : {ACTIVE_STUDENTS[nama_clean]['nama']}\n"
             f"Kelas   : {ACTIVE_STUDENTS[nama_clean]['kelas']}\n"
+            f"Materi  : {ACTIVE_STUDENTS[nama_clean].get('materi', '-')}\n"
             f"Jurusan : {ACTIVE_STUDENTS[nama_clean]['jurusan']}\n"
             f"Token   : {token_baru}\n"
             f"Waktu   : {ACTIVE_STUDENTS[nama_clean]['lock_time']}\n"
@@ -351,7 +750,6 @@ def lock():
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(content)
             
-        # Pop student credentials to log them out of Flask session
         session.pop('siswa', None)
         session.pop('nama_clean', None)
         session.pop('status', None)
@@ -359,7 +757,6 @@ def lock():
         return jsonify({'status': 'locked', 'token_file': filename})
         
     return jsonify({'status': 'ignored'})
-
 
 @app.route('/unlock', methods=['POST'])
 def unlock():
@@ -374,7 +771,6 @@ def unlock():
         expected_token = ACTIVE_STUDENTS[nama_clean]['token_baru']
         
     if token_input and token_input == expected_token:
-        # Unlock success
         if nama_clean in ACTIVE_STUDENTS:
             ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
             ACTIVE_STUDENTS[nama_clean]['token_baru'] = ''
@@ -383,7 +779,6 @@ def unlock():
         session['status'] = 'aktif'
         session['token_baru'] = ''
         
-        # Remove student token file
         filepath = f"data_token/{nama_clean}.txt"
         if os.path.exists(filepath):
             try:
@@ -393,12 +788,15 @@ def unlock():
                 
         return redirect(url_for('ujian'))
     else:
-        # Fail
+        student_state = ACTIVE_STUDENTS.get(nama_clean, {})
+        questions = get_shuffled_questions_for_student(student_state) if student_state else []
+        essay_questions = load_essay_questions(session.get('kelas', ''), session.get('materi', ''))
         return render_template('ujian.html', 
-                               questions=load_questions(), 
+                               questions=questions, 
+                               essay_questions=essay_questions,
+                               materi=session.get('materi', ''),
                                status='terkunci', 
                                error='Token salah! Silakan periksa kembali atau minta ulang pengawas.')
-
 
 @app.route('/student/status')
 def student_status():
@@ -407,7 +805,128 @@ def student_status():
     nama_clean = session['nama_clean']
     if nama_clean in ACTIVE_STUDENTS:
         return jsonify({'status': ACTIVE_STUDENTS[nama_clean]['status']})
-    return jsonify({'status': 'none'})
+    
+def get_gspread_client():
+    """Initializes gspread client using local JSON file or environment variable with automatic clock-skew compensation."""
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        import google.auth.jwt
+        
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        # Clock skew compensation for Windows local dev environments
+        try:
+            res = urllib.request.urlopen('https://www.google.com', timeout=3)
+            gtime = email.utils.mktime_tz(email.utils.parsedate_tz(res.headers['Date']))
+            drift = time.time() - gtime
+        except Exception:
+            drift = 0
+
+        if drift > 5 or drift < -5:
+            orig_encode = getattr(google.auth.jwt, '_orig_encode', google.auth.jwt.encode)
+            google.auth.jwt._orig_encode = orig_encode
+            def patched_encode(signer, payload):
+                if 'iat' in payload:
+                    payload['iat'] = int(payload['iat'] - drift - 2)
+                    payload['exp'] = int(payload['exp'] - drift - 2)
+                return orig_encode(signer, payload)
+            google.auth.jwt.encode = patched_encode
+            
+        # 1. Check environment variable GOOGLE_CREDENTIALS_JSON (Render / Cloud deployment)
+        json_env = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+        if json_env:
+            import json
+            creds_dict = json.loads(json_env)
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+            return gspread.authorize(creds)
+            
+        # 2. Check local 'key/' directory or root
+        key_dirs = ['key', '.']
+        for kd in key_dirs:
+            if os.path.exists(kd):
+                json_files = [os.path.join(kd, f) for f in os.listdir(kd) if f.endswith('.json') and f != 'package.json']
+                if json_files:
+                    creds = Credentials.from_service_account_file(json_files[0], scopes=scopes)
+                    return gspread.authorize(creds)
+    except Exception as e:
+        print(f"[Google Sheets Init Error] {e}")
+        
+    return None
+
+
+def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details):
+    """Appends exam result to Google Spreadsheet 'ulangan harian pertama'."""
+    try:
+        gc = get_gspread_client()
+        if not gc:
+            print("[Google Sheets] Service account credentials not found. Skipping sheet sync.")
+            return False
+            
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID')
+        sheet_name = os.environ.get('GOOGLE_SHEET_NAME', 'ulangan harian pertama')
+        
+        sh = None
+        if sheet_id:
+            try:
+                sh = gc.open_by_key(sheet_id)
+            except Exception as e:
+                print(f"[Google Sheets] Could not open sheet by ID: {e}")
+                
+        if not sh:
+            try:
+                sh = gc.open(sheet_name)
+            except Exception as oe:
+                print(f"[Google Sheets] Could not open sheet by name '{sheet_name}': {oe}")
+                try:
+                    sh = gc.create(sheet_name)
+                except Exception as ce:
+                    print(f"[Google Sheets] Could not create sheet: {ce}")
+                    return False
+                    
+        worksheet = sh.sheet1
+        
+        # Check headers
+        try:
+            existing_rows = worksheet.get_all_values()
+        except Exception:
+            existing_rows = []
+            
+        if not existing_rows:
+            headers = [
+                "Timestamp", "Nama Siswa", "Kelas", "Jurusan", "Materi",
+                "Skor PG (Maks 40)", "Benar PG", "Total Soal PG",
+                "Detail Jawaban PG", "Detail Jawaban Esai", "Catatan PG"
+            ]
+            worksheet.append_row(headers)
+            
+        pg_summary = "; ".join([f"S{d['index']}: {d['student_answer'] or '-'}" for d in details])
+        essay_summary = "\n".join([f"Esai {ed['index']}: {ed['student_answer'] or '(Kosong)'}" for ed in essay_details])
+        
+        row_data = [
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            nama_siswa,
+            kelas,
+            jurusan,
+            materi,
+            score,
+            f"{correct_count} / {total_count}",
+            total_count,
+            pg_summary,
+            essay_summary,
+            "ini masih nilai pg dan dapat berubah jika essai anda benar !"
+        ]
+        
+        worksheet.append_row(row_data)
+        print(f"[Google Sheets Success] Recorded exam result for '{nama_siswa}' to '{sheet_name}'")
+        return True
+    except Exception as e:
+        print(f"[Google Sheets Error] Failed to save result: {e}")
+        return False
+
 
 
 @app.route('/submit', methods=['POST'])
@@ -416,8 +935,11 @@ def submit():
         return redirect(url_for('login'))
         
     nama_clean = session['nama_clean']
+    kelas = session['kelas']
+    materi = session.get('materi', '')
+    jurusan = session['jurusan']
+    nama_siswa = session['siswa']
     
-    # Check if student is locked in backend registry
     if nama_clean in ACTIVE_STUDENTS and ACTIVE_STUDENTS[nama_clean]['status'] == 'terkunci':
         session.pop('siswa', None)
         session.pop('nama_clean', None)
@@ -427,8 +949,9 @@ def submit():
     if nama_clean in ACTIVE_STUDENTS and ACTIVE_STUDENTS[nama_clean]['status'] == 'selesai':
         return redirect(url_for('selesai'))
         
-    questions = load_questions()
-    correct_answers = load_answers()
+    questions = load_questions(kelas, materi)
+    correct_answers = load_answers(kelas, materi)
+    essay_questions = load_essay_questions(kelas, materi)
     
     student_answers = {}
     correct_count = 0
@@ -438,68 +961,127 @@ def submit():
     
     for q in questions:
         q_idx = q['index']
-        # Retrieve answer submitted by student
         ans = request.form.get(f'q{q_idx}', '').strip().upper()
-        student_answers[q_idx] = ans
+        
+        if nama_clean in ACTIVE_STUDENTS:
+            mapping = ACTIVE_STUDENTS[nama_clean].get('shuffled_choices', {}).get(q_idx, {})
+            real_ans = mapping.get(ans, ans)
+        else:
+            real_ans = ans
+            
+        student_answers[q_idx] = real_ans
         
         expected = correct_answers.get(q_idx, '')
-        is_correct = (ans == expected)
+        is_correct = (real_ans == expected)
         if is_correct:
             correct_count += 1
             
         details.append({
             'index': q_idx,
             'question': q['question'],
-            'student_answer': ans,
+            'student_answer': real_ans,
             'correct_answer': expected,
             'is_correct': is_correct,
             'choices': q['choices']
         })
         
-    score = round((correct_count / total_count * 100), 2) if total_count > 0 else 0.0
+    score = round((correct_count / total_count * 40), 2) if total_count > 0 else 0.0
+    if isinstance(score, float) and score.is_integer():
+        score = int(score)
     
-    # Save statistics/answers in active student record
+    # Process Essay answers (not auto-graded)
+    essay_details = []
+    student_essay_answers = {}
+    for eq in essay_questions:
+        eq_idx = eq['index']
+        ans_essay = request.form.get(f'essay{eq_idx}', '').strip()
+        student_essay_answers[eq_idx] = ans_essay
+        essay_details.append({
+            'index': eq_idx,
+            'question': eq['question'],
+            'student_answer': ans_essay
+        })
+    
     if nama_clean in ACTIVE_STUDENTS:
         ACTIVE_STUDENTS[nama_clean]['status'] = 'selesai'
         ACTIVE_STUDENTS[nama_clean]['score'] = score
         ACTIVE_STUDENTS[nama_clean]['answers'] = student_answers
+        ACTIVE_STUDENTS[nama_clean]['essay_answers'] = student_essay_answers
         
     session['status'] = 'selesai'
     session['score'] = score
+    session['essay_answers'] = student_essay_answers
     
-    # Write to hasil ujian/...
-    kelas = session['kelas']
-    jurusan = session['jurusan']
-    nama_siswa = session['siswa']
+    # Save to Google Sheets
+    save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details)
     
-    # Folder path
-    result_dir = os.path.join('hasil ujian', kelas, jurusan, nama_siswa)
-    os.makedirs(result_dir, exist_ok=True)
-    
-    # Write results txt
-    txt_path = os.path.join(result_dir, 'hasil.txt')
-    with open(txt_path, 'w', encoding='utf-8') as f:
-        f.write("==================================================\n")
-        f.write("HASIL UJIAN SISWA - SMK BUDI MURNI 2\n")
-        f.write("==================================================\n")
-        f.write(f"Nama     : {nama_siswa}\n")
-        f.write(f"Kelas    : {kelas}\n")
-        f.write(f"Jurusan  : {jurusan}\n")
-        f.write(f"Tanggal  : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"Skor     : {score} / 100\n")
-        f.write(f"Benar    : {correct_count} dari {total_count} soal\n")
-        f.write("--------------------------------------------------\n")
-        f.write("DETAIL JAWABAN:\n")
-        for d in details:
-            status_symbol = "✓ BENAR" if d['is_correct'] else "✗ SALAH"
-            f.write(f"Soal {d['index']}: {status_symbol}\n")
-            f.write(f"  Jawaban Siswa: {d['student_answer'] or '-'}\n")
-            f.write(f"  Jawaban Kunci: {d['correct_answer']}\n\n")
+    try:
+        if not kelas.lower().startswith('kelas'):
+            folder_kelas = f"Kelas {kelas}"
+        else:
+            folder_kelas = kelas[0].upper() + kelas[1:]
             
-    # Write results html report
-    html_path = os.path.join(result_dir, 'hasil_ujian.html')
-    
-    report_html = f"""<!DOCTYPE html>
+        if materi:
+            result_dir = os.path.join('hasil ujian', folder_kelas, materi, jurusan, nama_siswa)
+        else:
+            result_dir = os.path.join('hasil ujian', folder_kelas, jurusan, nama_siswa)
+            
+        os.makedirs(result_dir, exist_ok=True)
+        
+        txt_path = os.path.join(result_dir, 'hasil.txt')
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write("==================================================\n")
+            f.write("HASIL UJIAN SISWA - SMK BUDI MURNI 2\n")
+            f.write("==================================================\n")
+            f.write(f"Nama     : {nama_siswa}\n")
+            f.write(f"Kelas    : {kelas}\n")
+            f.write(f"Materi   : {materi}\n")
+            f.write(f"Jurusan  : {jurusan}\n")
+            f.write(f"Tanggal  : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Skor PG  : {score} / 40 (Bobot 40%)\n")
+            f.write(f"Benar PG : {correct_count} dari {total_count} soal\n")
+            f.write("--------------------------------------------------\n")
+            f.write("CATATAN NILAI:\n")
+            f.write("ini masih nilai pg dan dapat berubah jika essai anda benar !\n")
+            f.write("--------------------------------------------------\n")
+            f.write("KETERANGAN LEMBAR ESAI:\n")
+            f.write("Harap tulis caranya di kertas selembar/coret coretan jika tidak maka nilai yang anda dapatkan setengah dari nilai seharusnya!\n")
+            f.write("--------------------------------------------------\n")
+            f.write("DETAIL JAWABAN PILIHAN GANDA:\n")
+            for d in details:
+                status_symbol = "✓ BENAR" if d['is_correct'] else "✗ SALAH"
+                f.write(f"Soal {d['index']}: {status_symbol}\n")
+                f.write(f"  Jawaban Siswa: {d['student_answer'] or '-'}\n")
+                f.write(f"  Jawaban Kunci: {d['correct_answer']}\n\n")
+                
+            if essay_details:
+                f.write("--------------------------------------------------\n")
+                f.write("DETAIL JAWABAN ESAI (TIDAK DINILAI OTOMATIS):\n")
+                for ed in essay_details:
+                    f.write(f"Soal Esai {ed['index']}: {ed['question']}\n")
+                    f.write(f"  Jawaban Siswa: {ed['student_answer'] or '(Kosong)'}\n\n")
+    except Exception as e:
+        print(f"[Local Save Warning] Failed writing local result txt file: {e}")
+
+            
+    try:
+        html_path = os.path.join(result_dir, 'hasil_ujian.html')
+        
+        essay_rows_html = ""
+        if essay_details:
+            essay_rows_html = "<h3>Lembar Jawaban Esai:</h3>"
+            for ed in essay_details:
+                essay_rows_html += f"""
+                <div class="detail-item" style="border-left: 5px solid #fd7e14;">
+                    <div class="question-txt">Soal Esai {ed['index']}: {ed['question']}</div>
+                    <div style="font-size:14px; margin-top:8px;">
+                        <strong>Jawaban Siswa:</strong>
+                        <div style="background:#fff; border:1px solid #ddd; padding:10px; border-radius:6px; margin-top:5px; white-space:pre-wrap;">{ed['student_answer'] or '<i>Tidak diisi</i>'}</div>
+                    </div>
+                </div>
+                """
+        
+        report_html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -510,11 +1092,12 @@ def submit():
         .header {{ text-align: center; border-bottom: 2px solid #007bff; padding-bottom: 20px; margin-bottom: 30px; }}
         .school-title {{ font-size: 24px; font-weight: bold; color: #0c2340; text-transform: uppercase; margin: 5px 0; }}
         .report-title {{ font-size: 18px; color: #007bff; margin: 5px 0; }}
-        .meta-table {{ width: 100%; border-collapse: collapse; margin-bottom: 30px; }}
+        .meta-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
         .meta-table td {{ padding: 8px 12px; border: 1px dashed #ddd; font-size: 15px; }}
         .meta-label {{ font-weight: bold; width: 150px; background: #f8f9fa; }}
-        .score-box {{ text-align: center; margin: 30px 0; padding: 20px; background: #e8f0fe; border-radius: 8px; border: 1px solid #b3d1ff; }}
+        .score-box {{ text-align: center; margin: 20px 0; padding: 20px; background: #e8f0fe; border-radius: 8px; border: 1px solid #b3d1ff; }}
         .score-val {{ font-size: 48px; font-weight: bold; color: #1a73e8; }}
+        .alert-warning-essay {{ background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 15px; border-radius: 8px; font-size: 14px; margin-bottom: 25px; line-height: 1.5; }}
         .detail-item {{ background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 15px; margin-bottom: 15px; }}
         .detail-item.correct {{ border-left: 5px solid #28a745; }}
         .detail-item.incorrect {{ border-left: 5px solid #dc3545; }}
@@ -526,14 +1109,9 @@ def submit():
         .status-tag {{ font-weight: bold; float: right; font-size: 14px; text-transform: uppercase; }}
         .status-correct {{ color: #28a745; }}
         .status-incorrect {{ color: #dc3545; }}
-        /* Math formulas rendering */
         .math-fraction {{ display: inline-block; vertical-align: middle; text-align: center; padding: 0 4px; }}
         .math-num {{ display: block; border-bottom: 1px solid #333; padding: 0 2px; }}
         .math-den {{ display: block; padding: 0 2px; }}
-        @media print {{
-            body {{ background: white; padding: 0; }}
-            .report-card {{ box-shadow: none; max-width: 100%; padding: 0; }}
-        }}
     </style>
 </head>
 <body>
@@ -551,52 +1129,66 @@ def submit():
                 <td>{kelas}</td>
             </tr>
             <tr>
+                <td class="meta-label">Materi</td>
+                <td>{materi}</td>
                 <td class="meta-label">Jurusan</td>
                 <td>{jurusan}</td>
+            </tr>
+            <tr>
                 <td class="meta-label">Waktu Selesai</td>
-                <td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td>
+                <td colspan="3">{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td>
             </tr>
         </table>
+
+        <div class="alert-warning-essay">
+            <strong>⚠️ KETENTUAN LEMBAR ESAI:</strong><br>
+            Harap tulis caranya di kertas selembar/coret coretan jika tidak maka nilai yang anda dapatkan setengah dari nilai seharusnya!
+        </div>
         
         <div class="score-box">
-            <div>NILAI AKHIR:</div>
-            <div class="score-val">{score}</div>
-            <div style="font-size:14px; color:#555;">Keterangan: Benar {correct_count} dari {total_count} soal</div>
-        </div>
-        
-        <h3>Analisis Lembar Jawaban:</h3>
-"""
-    
-    for d in details:
-        status_cls = "correct" if d['is_correct'] else "incorrect"
-        status_lbl = "BENAR" if d['is_correct'] else "SALAH"
-        status_lbl_cls = "status-correct" if d['is_correct'] else "status-incorrect"
-        
-        student_ans_val = d['student_answer']
-        student_ans_text = f"{student_ans_val}. {d['choices'].get(student_ans_val, '')}" if student_ans_val else "-"
-        correct_ans_text = f"{d['correct_answer']}. {d['choices'].get(d['correct_answer'], '')}"
-        
-        report_html += f"""
-        <div class="detail-item {status_cls}">
-            <span class="status-tag {status_lbl_cls}">{status_lbl}</span>
-            <div class="question-txt">Soal {d['index']}: {d['question']}</div>
-            <div class="answer-comparison">
-                <div>Jawaban Siswa: <span class="ans-badge badge-student">{student_ans_text}</span></div>
-                <div>Jawaban Kunci: <span class="ans-badge badge-correct">{correct_ans_text}</span></div>
+            <div>NILAI PILIHAN GANDA (MAKSIMAL 40):</div>
+            <div class="score-val">{score} / 40</div>
+            <div style="font-size:14px; color:#555;">Keterangan: Benar {correct_count} dari {total_count} soal PG (Bobot PG: 40%, Bobot Essai: 60%)</div>
+            <div style="font-size:14px; color:#c2410c; font-weight:bold; margin-top:10px; padding:10px; background:#fff7ed; border:1px solid #ffedd5; border-radius:6px;">
+                ini masih nilai pg dan dapat berubah jika essai anda benar !
             </div>
         </div>
-        """
         
-    report_html += """
-    </div>
+        <h3>Analisis Lembar Jawaban Pilihan Ganda:</h3>
+"""
+        
+        for d in details:
+            status_cls = "correct" if d['is_correct'] else "incorrect"
+            status_lbl = "BENAR" if d['is_correct'] else "SALAH"
+            status_lbl_cls = "status-correct" if d['is_correct'] else "status-incorrect"
+            
+            student_ans_val = d['student_answer']
+            student_ans_text = f"{student_ans_val}. {d['choices'].get(student_ans_val, '')}" if student_ans_val else "-"
+            correct_ans_text = f"{d['correct_answer']}. {d['choices'].get(d['correct_answer'], '')}"
+            
+            report_html += f"""
+            <div class="detail-item {status_cls}">
+                <span class="status-tag {status_lbl_cls}">{status_lbl}</span>
+                <div class="question-txt">Soal {d['index']}: {d['question']}</div>
+                <div class="answer-comparison">
+                    <div>Jawaban Siswa: <span class="ans-badge badge-student">{student_ans_text}</span></div>
+                    <div>Jawaban Kunci: <span class="ans-badge badge-correct">{correct_ans_text}</span></div>
+                </div>
+            </div>
+            """
+            
+        report_html += essay_rows_html
+        report_html += """
+        </div>
 </body>
 </html>
 """
-    with open(html_path, 'w', encoding='utf-8') as f:
-        f.write(report_html)
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(report_html)
+    except Exception as e:
+        print(f"[Local Save Warning] Failed writing local HTML report: {e}")
         
     return redirect(url_for('selesai'))
-
 
 @app.route('/selesai')
 def selesai():
@@ -604,13 +1196,23 @@ def selesai():
         return redirect(url_for('login'))
         
     score = session.get('score', 0.0)
-    questions = load_questions()
-    correct_answers = load_answers()
+    kelas = session.get('kelas', 'XI')
+    materi = session.get('materi', '')
+    jurusan = session.get('jurusan', '')
+    nama_siswa = session.get('siswa', '')
+    
+    questions = load_questions(kelas, materi)
+    correct_answers = load_answers(kelas, materi)
+    essay_questions = load_essay_questions(kelas, materi)
     
     nama_clean = session['nama_clean']
     student_ans = {}
+    student_essay_ans = {}
     if nama_clean in ACTIVE_STUDENTS:
-        student_ans = ACTIVE_STUDENTS[nama_clean]['answers']
+        student_ans = ACTIVE_STUDENTS[nama_clean].get('answers', {})
+        student_essay_ans = ACTIVE_STUDENTS[nama_clean].get('essay_answers', {})
+    else:
+        student_essay_ans = session.get('essay_answers', {})
         
     details = []
     for q in questions:
@@ -625,7 +1227,38 @@ def selesai():
             'is_correct': (ans == expected)
         })
         
-    return render_template('selesai.html', score=score, details=details)
+    essay_details = []
+    for eq in essay_questions:
+        idx = eq['index']
+        ans = student_essay_ans.get(idx, '')
+        essay_details.append({
+            'index': idx,
+            'question': eq['question'],
+            'student_answer': ans
+        })
+        
+    if not kelas.lower().startswith('kelas'):
+        folder_kelas = f"Kelas {kelas}"
+    else:
+        folder_kelas = kelas[0].upper() + kelas[1:]
+        
+    if materi:
+        result_path = f"hasil ujian/{folder_kelas}/{materi}/{jurusan}/{nama_siswa}/"
+    else:
+        result_path = f"hasil ujian/{folder_kelas}/{jurusan}/{nama_siswa}/"
+        
+    return render_template('selesai.html', score=score, details=details, essay_details=essay_details, result_path=result_path, materi=materi)
+
+
+@app.route('/logout')
+def logout():
+    session.pop('siswa', None)
+    session.pop('kelas', None)
+    session.pop('jurusan', None)
+    session.pop('nama_clean', None)
+    session.pop('status', None)
+    session.pop('score', None)
+    return redirect(url_for('login'))
 
 
 # PROCTOR MODULE (SUPERVISOR LOGINS & STATE CONTROLS)
@@ -732,5 +1365,17 @@ def proctor_logout():
 
 
 if __name__ == '__main__':
-    # Start on all interfaces (host='0.0.0.0') on port 5000
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    try:
+        from waitress import serve
+        print("==================================================")
+        print(" Server Ujian SMK Budi Murni 2 Berjalan!")
+        print(" Menggunakan Waitress Multi-Threaded WSGI Server")
+        print(" Akses Lokal  : http://localhost:5000")
+        print(" Akses LAN/WiFi: http://<IP-Komputer-Server>:5000")
+        print(" Threads      : 32 concurrent workers")
+        print("==================================================")
+        serve(app, host='0.0.0.0', port=5000, threads=32)
+    except ImportError:
+        print("[Warning] Waitress belum terinstall, menggunakan server bawaan Flask...")
+        app.run(host='0.0.0.0', port=5000, debug=True)
+

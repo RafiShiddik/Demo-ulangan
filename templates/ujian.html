@@ -173,6 +173,30 @@
             font-weight: 500;
         }
 
+        /* Extracted image styles */
+        .exam-image-container {
+            margin: 10px 0;
+            padding: 8px;
+            background: #ffffff;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            display: inline-block;
+            max-width: 100%;
+        }
+        .exam-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            display: block;
+        }
+        /* Override label alignment when option has image block */
+        .option-label {
+            align-items: flex-start;
+        }
+        .option-label input[type="radio"] {
+            margin-top: 4px;
+        }
+
         /* Submit Button */
         .btn-submit {
             width: 100%;
@@ -347,7 +371,7 @@
                 </div>
                 <div class="student-info">
                     <h3>{{ session.get('siswa') }}</h3>
-                    <p>Kelas: {{ session.get('kelas') }} | Jurusan: {{ session.get('jurusan') }}</p>
+                    <p>Kelas: {{ session.get('kelas') }} | Jurusan: {{ session.get('jurusan') }} {% if materi %}| Materi: {{ materi }}{% endif %}</p>
                 </div>
             </div>
             <div class="badge-status">
@@ -360,15 +384,18 @@
         <div class="exam-card">
             <div class="exam-header">
                 <h2>Ujian Ulangan Harian Matematika</h2>
-                <p>Jawablah seluruh pertanyaan pilihan ganda di bawah ini dengan teliti. Dilarang bekerja sama atau berpindah halaman.</p>
+                {% if materi %}<p style="color: #60a5fa; font-weight: 600; font-size: 16px; margin-top: 5px;">Materi: {{ materi }}</p>{% endif %}
+                <p style="margin-top: 8px;">Jawablah seluruh pertanyaan di bawah ini dengan teliti. Dilarang bekerja sama atau berpindah halaman.</p>
             </div>
 
             <form id="ujianForm" action="{{ url_for('submit') }}" method="POST">
                 
+                <h3 style="color: #38bdf8; font-size: 18px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">Bagian I: Soal Pilihan Ganda</h3>
+
                 {% for q in questions %}
                 <div class="question-box">
                     <div class="question-text">
-                        <strong>{{ q.index }}.</strong> {{ q.question | safe }}
+                        {{ q.question | safe }}
                     </div>
                     <div class="options-list">
                         {% for key, val in q.choices.items() %}
@@ -382,6 +409,33 @@
                     </div>
                 </div>
                 {% endfor %}
+
+                {% if essay_questions %}
+                <div style="margin-top: 40px; margin-bottom: 25px; border-top: 2px dashed rgba(255, 255, 255, 0.1); padding-top: 30px;">
+                    <h3 style="color: #fbbf24; font-size: 18px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">Bagian II: Soal Esai</h3>
+                    
+                    <!-- Mandatory Warning Box -->
+                    <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #fef08a; padding: 18px 20px; border-radius: 16px; margin-bottom: 25px; line-height: 1.6; font-size: 15px; display: flex; align-items: flex-start; gap: 14px;">
+                        <span style="font-size: 24px; line-height: 1;">📌</span>
+                        <div>
+                            <strong style="color: #fbbf24; font-size: 16px;">PERHATIAN / KETENTUAN LEMBAR ESAI:</strong><br>
+                            Harap tulis caranya di kertas selembar/coret coretan jika tidak maka nilai yang anda dapatkan setengah dari nilai seharusnya!
+                        </div>
+                    </div>
+
+                    {% for eq in essay_questions %}
+                    <div class="question-box" style="border-left: 4px solid #f59e0b;">
+                        <div class="question-text">
+                            {{ eq.question | safe }}
+                        </div>
+                        <div style="margin-top: 15px;">
+                            <textarea name="essay{{ eq.index }}" rows="4" style="width: 100%; padding: 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; color: white; font-family: inherit; font-size: 15px; outline: none; resize: vertical;" placeholder="Tuliskan jawaban singkat Anda di sini (wajib sertakan uraian/langkah di kertas selembar)..."></textarea>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                </div>
+                {% endif %}
 
                 <button type="submit" class="btn-submit">Kirim Jawaban Ujian</button>
             </form>
@@ -398,8 +452,14 @@
         }
 
         let isLocked = false;
-        async function triggerLockout() {
-            if (isLocked) return;
+        let isSubmitting = false;
+
+        document.getElementById('ujianForm').addEventListener('submit', function() {
+            isSubmitting = true;
+        });
+
+        function triggerLockout() {
+            if (isLocked || isSubmitting) return;
             isLocked = true;
             
             // Instantly clear the document body content to hide questions & prevent form manipulations
@@ -424,17 +484,23 @@
                 </div>
             `;
             
+            // Send lock ping instantly using beacon/keepalive to prevent browser tab throttling/aborts
             try {
-                // Gunakan await untuk memastikan request lock selesai diproses server sebelum
-                // browser dialihkan ke halaman login, sehingga menghapus session secara sempurna.
-                await fetch('/lock', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon('/lock', '');
+                } else {
+                    fetch('/lock', {
+                        method: 'POST',
+                        keepalive: true
+                    });
+                }
             } catch (err) {
-                console.error("Gagal melakukan pelaporan kunci ke server:", err);
+                console.error("Gagal melakukan pelaporan kunci (beacon) ke server:", err);
+                // Fallback fetch
+                fetch('/lock', {
+                    method: 'POST',
+                    keepalive: true
+                }).catch(e => console.error("Fallback fetch gagal:", e));
             }
             
             // Redirect instan ke halaman login awal dengan detail keterangan lockout
@@ -455,7 +521,7 @@
 
         // 3. Detect reloading, navigating away, or closing the tab
         window.addEventListener('beforeunload', function() {
-            if (!isLocked) {
+            if (!isLocked && !isSubmitting) {
                 // Kirim sinyal penguncian instan secara synchronous/keepalive
                 fetch('/lock', {
                     method: 'POST',
