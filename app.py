@@ -164,10 +164,11 @@ def find_materi_folder(kelas, materi=None):
     if not os.path.exists(base_dir):
         return None
     target_class_dir = None
+    norm_k = kelas.replace('Kelas ', '').replace('kelas ', '').strip().upper()
     for item in os.listdir(base_dir):
         if os.path.isdir(os.path.join(base_dir, item)):
-            k_key = item.replace('Kelas ', '').replace('kelas ', '').strip()
-            if k_key.upper() == kelas.upper():
+            k_key = item.replace('Kelas ', '').replace('kelas ', '').strip().upper()
+            if k_key == norm_k:
                 target_class_dir = os.path.join(base_dir, item)
                 break
                 
@@ -178,6 +179,10 @@ def find_materi_folder(kelas, materi=None):
         materi_dir = os.path.join(target_class_dir, materi)
         if os.path.exists(materi_dir) and os.path.isdir(materi_dir):
             return materi_dir
+        for sub in os.listdir(target_class_dir):
+            sub_path = os.path.join(target_class_dir, sub)
+            if os.path.isdir(sub_path) and sub.strip().lower() == materi.strip().lower():
+                return sub_path
             
     subs = [os.path.join(target_class_dir, s) for s in os.listdir(target_class_dir) if os.path.isdir(os.path.join(target_class_dir, s))]
     if subs:
@@ -556,10 +561,13 @@ def login():
             return render_template('login.html', error='Semua kolom wajib diisi!')
             
         materi_map = scan_soal_directory()
-        avail_materis = materi_map.get(kelas, [])
-        if not materi and avail_materis:
-            materi = avail_materis[0]
-            
+        norm_k = kelas.replace('Kelas ', '').replace('kelas ', '').strip().upper()
+        avail_materis = []
+        for k, v in materi_map.items():
+            if k.upper() == norm_k:
+                avail_materis = v
+                break
+                
         nama_clean = clean_filename(nama)
         
         if nama_clean in ACTIVE_STUDENTS:
@@ -596,8 +604,12 @@ def login():
                 return redirect(url_for('konfirmasi'))
 
         questions_all = load_questions(kelas, materi)
+        if not questions_all and avail_materis:
+            materi = avail_materis[0]
+            questions_all = load_questions(kelas, materi)
+
         if not questions_all:
-            return render_template('login.html', error=f'Soal untuk kelas {kelas} ({materi}) belum tersedia!')
+            return render_template('login.html', error=f'Soal untuk kelas {kelas} ({materi or "Umum"}) belum tersedia!')
             
         q_order = [q['index'] for q in questions_all]
         if kelas.upper() != 'XII':
