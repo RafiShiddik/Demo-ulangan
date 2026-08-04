@@ -133,9 +133,24 @@ def extract_images_from_docx(doc_path, class_name):
                 
     return saved_images
 
+def get_soal_base_dir():
+    """Finds the absolute path to 'soal matematika' directory across local and serverless environments."""
+    candidates = [
+        os.path.join(BASE_DIR, 'soal matematika'),
+        os.path.join(os.path.dirname(BASE_DIR), 'soal matematika'),
+        os.path.join(os.getcwd(), 'soal matematika'),
+        '/var/task/soal matematika',
+        '/var/task/api/soal matematika',
+        os.path.join(BASE_DIR, '..', 'soal matematika')
+    ]
+    for c in candidates:
+        if os.path.exists(c) and os.path.isdir(c):
+            return c
+    return os.path.join(BASE_DIR, 'soal matematika')
+
 def scan_soal_directory():
     """Scans 'soal matematika/' and returns a dict mapping kelas -> list of available materis."""
-    base_dir = os.path.join(BASE_DIR, 'soal matematika')
+    base_dir = get_soal_base_dir()
     materi_map = {}
     if not os.path.exists(base_dir):
         return materi_map
@@ -160,7 +175,7 @@ def scan_soal_directory():
 
 def find_materi_folder(kelas, materi=None):
     """Finds the path to the specified class and materi folder."""
-    base_dir = os.path.join(BASE_DIR, 'soal matematika')
+    base_dir = get_soal_base_dir()
     if not os.path.exists(base_dir):
         return None
     target_class_dir = None
