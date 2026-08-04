@@ -269,6 +269,10 @@
             background: rgba(16, 185, 129, 0.15);
             color: #34d399;
         }
+        .status-badge.konfirmasi {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+        }
         .status-badge.terkunci {
             background: rgba(239, 68, 68, 0.18);
             color: #fca5a5;
@@ -278,14 +282,25 @@
             color: #93c5fd;
         }
         
+        .student-exam-key {
+            font-weight: 700;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.12);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            padding: 4px 8px;
+            border-radius: 8px;
+            letter-spacing: 1.5px;
+            font-size: 13px;
+        }
         .student-lock-key {
             font-weight: 700;
             color: #ef4444;
             background: rgba(239, 68, 68, 0.1);
             border: 1px dashed rgba(239, 68, 68, 0.2);
-            padding: 2px 6px;
-            border-radius: 6px;
-            letter-spacing: 1px;
+            padding: 4px 8px;
+            border-radius: 8px;
+            letter-spacing: 1.5px;
+            font-size: 13px;
         }
         .btn-table {
             padding: 6px 12px;
@@ -355,22 +370,19 @@
         
         <div class="grid-dash">
             
-            <!-- Left Grid: Token Manager & Quick Action -->
+            <!-- Left Grid: Info Card -->
             <div>
                 <div class="card-stats">
-                    <h3>Token Gerbang Utama</h3>
-                    <div class="token-showcase">
-                        <div class="token-lbl">Token Berjalan Saat Ini</div>
-                        <div class="token-val" id="activeTokenDisplay">{{ initial_token }}</div>
+                    <h3>Token Masuk Siswa</h3>
+                    <div class="token-showcase" style="border-color: rgba(56, 189, 248, 0.4);">
+                        <div class="token-lbl">Sistem Token Unik Siswa</div>
+                        <div class="token-val" style="font-size:20px; color:#38bdf8;">OTOMATIS</div>
                     </div>
                     <div class="form-group">
-                        <label>Update Token Masuk</label>
-                        <div class="form-update-token">
-                            <input type="text" id="newTokenVal" placeholder="TOKEN BARU" maxlength="8" value="{{ initial_token }}">
-                            <button class="btn-edit-token" onclick="updateInitialToken()">Update</button>
-                        </div>
-                        <p style="font-size:12px; color:#64748b; margin-top:8px; line-height:1.4;">
-                            *Token masuk ini diberikan pada awal ujian bagi siswa yang belum masuk. Siswa yang terkunci karena keluar dari tab hanya bisa dibuka dengan token khusus siswa tersebut.
+                        <p style="font-size:13px; color:#94a3b8; line-height:1.6;">
+                            📌 <strong>Informasi Pengawas:</strong><br>
+                            Setiap siswa yang mengisi form login awal akan mendapatkan <strong>Token Ujian Unik</strong> yang berbeda satu sama lain.<br><br>
+                            Lihat kolom <strong>"Token Masuk Ujian"</strong> di tabel untuk memberikan kode token kepada siswa sebelum mereka memulai pengerjaan.
                         </p>
                     </div>
                 </div>
@@ -390,9 +402,10 @@
                                 <tr>
                                     <th>Nama Siswa</th>
                                     <th>Kelas/Jurusan</th>
+                                    <th style="text-align:center;">Token Masuk Ujian</th>
                                     <th>Status</th>
-                                    <th>Token Lock</th>
-                                    <th>Nilai</th>
+                                    <th style="text-align:center;">Token Lock</th>
+                                    <th style="text-align:center;">Nilai</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
@@ -425,7 +438,7 @@
                 tbody.innerHTML = '';
                 
                 if (data.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#64748b;">Belum ada siswa yang masuk ke ujian.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#64748b;">Belum ada siswa yang masuk ke ujian.</td></tr>`;
                     return;
                 }
                 
@@ -434,8 +447,11 @@
                     let actionButtons = '';
                     let tokenCell = '-';
                     let scoreCell = '-';
+                    let examTokenCell = s.exam_token ? `<span class="student-exam-key">${s.exam_token}</span>` : '-';
                     
-                    if (s.status === 'aktif') {
+                    if (s.status === 'konfirmasi') {
+                        statusLabel = `<span class="status-badge konfirmasi">⏳ Konfirmasi</span>`;
+                    } else if (s.status === 'aktif') {
                         statusLabel = `<span class="status-badge aktif"><span style="width:6px;height:6px;border-radius:50%;background:#10b981;"></span>Aktif</span>`;
                     } else if (s.status === 'terkunci') {
                         statusLabel = `<span class="status-badge terkunci">⚠️ Terkunci</span>`;
@@ -453,7 +469,8 @@
                     const row = `
                         <tr>
                             <td class="student-name-col">${s.nama}</td>
-                            <td>${s.kelas} - ${s.jurusan}</td>
+                            <td>${s.kelas} - ${s.jurusan}<br><small style="color:#94a3b8;">${s.materi || '-'}</small></td>
+                            <td style="text-align:center;">${examTokenCell}</td>
                             <td>${statusLabel}</td>
                             <td style="text-align:center;">${tokenCell}</td>
                             <td style="text-align:center;">${scoreCell}</td>

@@ -10,8 +10,28 @@ import docx
 
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 
-app = Flask(__name__, static_folder='.', static_url_path='')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'static'), static_url_path='/static')
 app.secret_key = 'bm_exam_secure_secret_key_2026'
+
+@app.route('/smk budi murni 2.jpg')
+@app.route('/smk%20budi%20murni%202.jpg')
+def serve_logo():
+    logo_path = os.path.join(BASE_DIR, 'smk budi murni 2.jpg')
+    if os.path.exists(logo_path):
+        return send_file(logo_path)
+    return '', 404
+
+@app.route('/static/extracted_images/<class_name>/<filename>')
+def serve_extracted_images(class_name, filename):
+    local_p = os.path.join(BASE_DIR, 'static', 'extracted_images', class_name, filename)
+    if os.path.exists(local_p):
+        return send_file(local_p)
+    tmp_p = os.path.join('/tmp', 'extracted_images', class_name, filename)
+    if os.path.exists(tmp_p):
+        return send_file(tmp_p)
+    return '', 404
 
 # Global configuration and state
 CONFIG = {
@@ -78,9 +98,20 @@ def extract_images_from_docx(doc_path, class_name):
     """Extracts all images from a docx file and saves them to a static directory."""
     if not os.path.exists(doc_path):
         return {}
-    doc = docx.Document(doc_path)
-    output_dir = f"static/extracted_images/{class_name}"
-    os.makedirs(output_dir, exist_ok=True)
+    try:
+        doc = docx.Document(doc_path)
+    except Exception:
+        return {}
+        
+    output_dir = os.path.join(BASE_DIR, "static", "extracted_images", class_name)
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except Exception:
+        output_dir = os.path.join("/tmp", "extracted_images", class_name)
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception:
+            pass
     
     saved_images = {}
     for rId, part in doc.part.related_parts.items():
@@ -93,8 +124,9 @@ def extract_images_from_docx(doc_path, class_name):
             img_path = os.path.join(output_dir, img_filename)
             
             try:
-                with open(img_path, 'wb') as f:
-                    f.write(part._blob)
+                if not os.path.exists(img_path):
+                    with open(img_path, 'wb') as f:
+                        f.write(part._blob)
                 saved_images[rId] = f"/static/extracted_images/{class_name}/{img_filename}"
             except Exception:
                 pass
@@ -103,7 +135,7 @@ def extract_images_from_docx(doc_path, class_name):
 
 def scan_soal_directory():
     """Scans 'soal matematika/' and returns a dict mapping kelas -> list of available materis."""
-    base_dir = 'soal matematika'
+    base_dir = os.path.join(BASE_DIR, 'soal matematika')
     materi_map = {}
     if not os.path.exists(base_dir):
         return materi_map
@@ -128,7 +160,7 @@ def scan_soal_directory():
 
 def find_materi_folder(kelas, materi=None):
     """Finds the path to the specified class and materi folder."""
-    base_dir = 'soal matematika'
+    base_dir = os.path.join(BASE_DIR, 'soal matematika')
     if not os.path.exists(base_dir):
         return None
     target_class_dir = None
@@ -733,28 +765,33 @@ def lock():
         ACTIVE_STUDENTS[nama_clean]['token_baru'] = token_baru
         ACTIVE_STUDENTS[nama_clean]['lock_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        os.makedirs('data_token', exist_ok=True)
-        filename = f"data_token/{nama_clean}.txt"
-        
-        content = (
-            "=============================\n"
-            "TOKEN BARU SISWA\n"
-            "=============================\n"
-            f"Nama    : {ACTIVE_STUDENTS[nama_clean]['nama']}\n"
-            f"Kelas   : {ACTIVE_STUDENTS[nama_clean]['kelas']}\n"
-            f"Materi  : {ACTIVE_STUDENTS[nama_clean].get('materi', '-')}\n"
-            f"Jurusan : {ACTIVE_STUDENTS[nama_clean]['jurusan']}\n"
-            f"Token   : {token_baru}\n"
-            f"Waktu   : {ACTIVE_STUDENTS[nama_clean]['lock_time']}\n"
-        )
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(content)
+        filename = None
+        try:
+            token_dir = os.path.join(BASE_DIR, 'data_token')
+            os.makedirs(token_dir, exist_ok=True)
+            filename = os.path.join(token_dir, f"{nama_clean}.txt")
+            
+            content = (
+                "=============================\n"
+                "TOKEN BARU SISWA\n"
+                "=============================\n"
+                f"Nama    : {ACTIVE_STUDENTS[nama_clean]['nama']}\n"
+                f"Kelas   : {ACTIVE_STUDENTS[nama_clean]['kelas']}\n"
+                f"Materi  : {ACTIVE_STUDENTS[nama_clean].get('materi', '-')}\n"
+                f"Jurusan : {ACTIVE_STUDENTS[nama_clean]['jurusan']}\n"
+                f"Token   : {token_baru}\n"
+                f"Waktu   : {ACTIVE_STUDENTS[nama_clean]['lock_time']}\n"
+            )
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except Exception as e:
+            print(f"[Lock File Save Warning] Could not save token file: {e}")
             
         session.pop('siswa', None)
         session.pop('nama_clean', None)
         session.pop('status', None)
             
-        return jsonify({'status': 'locked', 'token_file': filename})
+        return jsonify({'status': 'locked', 'token_file': filename or ''})
         
     return jsonify({'status': 'ignored'})
 
@@ -779,7 +816,7 @@ def unlock():
         session['status'] = 'aktif'
         session['token_baru'] = ''
         
-        filepath = f"data_token/{nama_clean}.txt"
+        filepath = os.path.join(BASE_DIR, "data_token", f"{nama_clean}.txt")
         if os.path.exists(filepath):
             try:
                 os.remove(filepath)
@@ -820,7 +857,7 @@ def get_gspread_client():
         
         # Clock skew compensation for Windows local dev environments
         try:
-            res = urllib.request.urlopen('https://www.google.com', timeout=3)
+            res = urllib.request.urlopen('https://www.google.com', timeout=2)
             gtime = email.utils.mktime_tz(email.utils.parsedate_tz(res.headers['Date']))
             drift = time.time() - gtime
         except Exception:
@@ -836,16 +873,18 @@ def get_gspread_client():
                 return orig_encode(signer, payload)
             google.auth.jwt.encode = patched_encode
             
-        # 1. Check environment variable GOOGLE_CREDENTIALS_JSON (Render / Cloud deployment)
+        # 1. Check environment variable GOOGLE_CREDENTIALS_JSON (Render / Cloud / Vercel deployment)
         json_env = os.environ.get('GOOGLE_CREDENTIALS_JSON')
         if json_env:
             import json
             creds_dict = json.loads(json_env)
+            if 'private_key' in creds_dict and isinstance(creds_dict['private_key'], str):
+                creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             return gspread.authorize(creds)
             
         # 2. Check local 'key/' directory or root
-        key_dirs = ['key', '.']
+        key_dirs = [os.path.join(BASE_DIR, 'key'), BASE_DIR]
         for kd in key_dirs:
             if os.path.exists(kd):
                 json_files = [os.path.join(kd, f) for f in os.listdir(kd) if f.endswith('.json') and f != 'package.json']
@@ -859,7 +898,7 @@ def get_gspread_client():
 
 
 def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details):
-    """Appends exam result to Google Spreadsheet 'ulangan harian pertama'."""
+    """Appends exam result to Google Spreadsheet in a worksheet tab specific to student's class with columns for each question."""
     try:
         gc = get_gspread_client()
         if not gc:
@@ -887,26 +926,48 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
                     print(f"[Google Sheets] Could not create sheet: {ce}")
                     return False
                     
-        worksheet = sh.sheet1
+        # Worksheet per class (e.g. "Kelas XI", "Kelas XII", "Kelas X")
+        norm_kelas = kelas.strip()
+        if not norm_kelas.lower().startswith('kelas'):
+            target_sheet_title = f"Kelas {norm_kelas}"
+        else:
+            target_sheet_title = norm_kelas.title()
+
+        try:
+            worksheet = sh.worksheet(target_sheet_title)
+        except Exception:
+            try:
+                worksheet = sh.add_worksheet(title=target_sheet_title, rows=100, cols=50)
+            except Exception as e:
+                print(f"[Google Sheets] Could not create worksheet '{target_sheet_title}': {e}")
+                worksheet = sh.sheet1
         
-        # Check headers
+        # Check existing headers
         try:
             existing_rows = worksheet.get_all_values()
         except Exception:
             existing_rows = []
             
-        if not existing_rows:
-            headers = [
-                "Timestamp", "Nama Siswa", "Kelas", "Jurusan", "Materi",
-                "Skor PG (Maks 40)", "Benar PG", "Total Soal PG",
-                "Detail Jawaban PG", "Detail Jawaban Esai", "Catatan PG"
-            ]
-            worksheet.append_row(headers)
-            
-        pg_summary = "; ".join([f"S{d['index']}: {d['student_answer'] or '-'}" for d in details])
-        essay_summary = "\n".join([f"Esai {ed['index']}: {ed['student_answer'] or '(Kosong)'}" for ed in essay_details])
+        base_headers = [
+            "Timestamp", "Nama Siswa", "Kelas", "Jurusan", "Materi",
+            "Skor PG (Maks 40)", "Benar PG", "Total Soal PG", "Catatan PG"
+        ]
+        pg_headers = [f"Soal PG {d['index']}" for d in details]
+        essay_headers = [f"Soal Esai {ed['index']}" for ed in essay_details]
         
-        row_data = [
+        full_headers = base_headers + pg_headers + essay_headers
+
+        if not existing_rows or len(existing_rows) == 0:
+            worksheet.append_row(full_headers)
+        else:
+            current_header_row = existing_rows[0]
+            if len(full_headers) > len(current_header_row):
+                try:
+                    worksheet.update(values=[full_headers], range_name='A1')
+                except Exception:
+                    pass
+
+        base_data = [
             datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             nama_siswa,
             kelas,
@@ -915,13 +976,15 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
             score,
             f"{correct_count} / {total_count}",
             total_count,
-            pg_summary,
-            essay_summary,
             "ini masih nilai pg dan dapat berubah jika essai anda benar !"
         ]
+        pg_data = [d.get('student_answer', '') or '-' for d in details]
+        essay_data = [ed.get('student_answer', '') or '(Kosong)' for ed in essay_details]
+
+        row_data = base_data + pg_data + essay_data
         
         worksheet.append_row(row_data)
-        print(f"[Google Sheets Success] Recorded exam result for '{nama_siswa}' to '{sheet_name}'")
+        print(f"[Google Sheets Success] Recorded exam result for '{nama_siswa}' to worksheet '{target_sheet_title}' in '{sh.title}'")
         return True
     except Exception as e:
         print(f"[Google Sheets Error] Failed to save result: {e}")

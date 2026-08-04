@@ -153,16 +153,28 @@
         <p class="msg">Terima kasih, ujian Anda telah berhasil terekam ke sistem dan disimpan untuk dokumentasi sekolah.</p>
         
         <div class="score-display">
-            <div class="lbl">Nilai Ujian Anda</div>
-            <div class="val">{{ score }}</div>
-            <div class="details">SMK Budi Murni 2</div>
+            <div class="lbl">Nilai Pilihan Ganda (PG)</div>
+            <div class="val">{{ score }} / 40</div>
+            <div class="details">Bobot PG: 40% | Bobot Essai: 60%</div>
+        </div>
+
+        <div style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); color: #fef08a; padding: 15px; border-radius: 14px; margin-bottom: 25px; font-weight: 600; font-size: 15px; line-height: 1.5;">
+            ⚠️ ini masih nilai pg dan dapat berubah jika essai anda benar !
         </div>
 
         <div class="badge-info-clean">
             Laporan detail hasil pengerjaan Anda telah diarsipkan ke dalam folder: <br>
-            <strong>hasil ujian/{{ session.get('kelas') }}/{{ session.get('jurusan') }}/{{ session.get('siswa') }}/</strong>
+            <strong style="color: #60a5fa;">{{ result_path }}</strong>
         </div>
 
+        {% if essay_details %}
+        <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #fef08a; padding: 14px; border-radius: 14px; margin-bottom: 25px; text-align: left; font-size: 14px; line-height: 1.5;">
+            <strong>📌 KETENTUAN LEMBAR ESAI:</strong><br>
+            Harap tulis caranya di kertas selembar/coret coretan jika tidak maka nilai yang anda dapatkan setengah dari nilai seharusnya!
+        </div>
+        {% endif %}
+
+        <h3 style="text-align: left; color: #38bdf8; font-size: 16px; margin-bottom: 12px;">Hasil Pilihan Ganda:</h3>
         <table class="check-table">
             <thead>
                 <tr>
@@ -190,7 +202,21 @@
             </tbody>
         </table>
 
-        <a href="{{ url_for('login') }}" class="btn-home">Kembali ke Halaman Masuk</a>
+        {% if essay_details %}
+        <h3 style="text-align: left; color: #fbbf24; font-size: 16px; margin-bottom: 12px; margin-top: 25px;">Hasil Pengerjaan Esai (Pemeriksaan Manual):</h3>
+        <div style="text-align: left; margin-bottom: 30px;">
+            {% for ed in essay_details %}
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px; margin-bottom: 12px;">
+                <div style="font-weight: 600; color: #fef08a; font-size: 14px;">Soal Esai {{ ed.index }}:</div>
+                <div style="font-size: 14px; color: #e2e8f0; margin-top: 4px; margin-bottom: 8px;">{{ ed.question | safe }}</div>
+                <div style="font-size: 13px; color: #94a3b8; font-weight: 500;">Jawaban yang Anda Kirim:</div>
+                <div style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; font-size: 14px; color: #ffffff; margin-top: 4px; white-space: pre-wrap;">{{ ed.student_answer or '(Tidak diisi)' }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <a href="{{ url_for('logout') }}" class="btn-home">Kembali ke Halaman Masuk</a>
     </div>
 
 </body>

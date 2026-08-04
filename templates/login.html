@@ -194,11 +194,18 @@
                 
                 <div class="form-group">
                     <label for="kelas">Kelas</label>
-                    <select id="kelas" name="kelas" required>
+                    <select id="kelas" name="kelas" required onchange="updateMateriOptions()">
                         <option value="" disabled selected>-- Pilih Kelas --</option>
                         <option value="X">Kelas X</option>
                         <option value="XI">Kelas XI</option>
                         <option value="XII">Kelas XII</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="materi">Materi Ujian</label>
+                    <select id="materi" name="materi" required>
+                        <option value="" disabled selected>-- Pilih Kelas Terlebih Dahulu --</option>
                     </select>
                 </div>
                 
@@ -219,12 +226,8 @@
                     </select>
                 </div>
                 
-                <div class="form-group">
-                    <label for="token">Token Ujian</label>
-                    <input type="text" id="token" name="token" class="token-input" placeholder="••••••" maxlength="8" required autocomplete="off">
-                </div>
                 
-                <button type="submit" class="btn-submit">Mulai Ujian</button>
+                <button type="submit" class="btn-submit">Lanjut ke Konfirmasi Ujian</button>
             </form>
             
             <div class="footer">
@@ -232,6 +235,54 @@
             </div>
         </div>
     </div>
+
+    <script>
+        function updateMateriOptions() {
+            const kelasVal = document.getElementById('kelas').value;
+            const materiSelect = document.getElementById('materi');
+            if (!kelasVal) return;
+            
+            materiSelect.innerHTML = '<option value="" disabled selected>Memuat materi...</option>';
+            
+            fetch('/api/materis/' + encodeURIComponent(kelasVal))
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error('Network error');
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    materiSelect.innerHTML = '';
+                    if (data && data.materis && data.materis.length > 0) {
+                        data.materis.forEach((m, idx) => {
+                            const opt = document.createElement('option');
+                            opt.value = m;
+                            opt.textContent = m;
+                            if (idx === 0) opt.selected = true;
+                            materiSelect.appendChild(opt);
+                        });
+                    } else {
+                        const opt = document.createElement('option');
+                        opt.value = 'Matematika Umum';
+                        opt.textContent = 'Matematika Umum';
+                        opt.selected = true;
+                        materiSelect.appendChild(opt);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error fetching materis:', err);
+                    materiSelect.innerHTML = '<option value="Matematika Umum" selected>Matematika Umum</option>';
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const kelasSelect = document.getElementById('kelas');
+            if (kelasSelect && kelasSelect.value) {
+                updateMateriOptions();
+            }
+        });
+    </script>
+
 
 </body>
 </html>

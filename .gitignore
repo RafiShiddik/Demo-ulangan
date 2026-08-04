@@ -10,3 +10,8 @@ hasil ujian/
 .gemini/
 .idea/
 .vscode/
+
+# Sensitive key files & tmp
+key/
+tmp/
+
