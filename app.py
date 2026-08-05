@@ -1157,9 +1157,9 @@ def submit():
             folder_kelas = kelas[0].upper() + kelas[1:]
             
         if materi:
-            result_dir = os.path.join('hasil ujian', folder_kelas, materi, jurusan, nama_siswa)
+            result_dir = os.path.join(BASE_DIR, 'hasil ujian', folder_kelas, materi, jurusan, nama_siswa)
         else:
-            result_dir = os.path.join('hasil ujian', folder_kelas, jurusan, nama_siswa)
+            result_dir = os.path.join(BASE_DIR, 'hasil ujian', folder_kelas, jurusan, nama_siswa)
             
         os.makedirs(result_dir, exist_ok=True)
         
