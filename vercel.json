@@ -1,7 +1,7 @@
 {
   "functions": {
-    "api/**/*.py": {
-      "includeFiles": "{soal matematika/**,templates/**,static/**,smk budi murni 2.jpg}",
+    "api/index.py": {
+      "includeFiles": "**",
       "maxDuration": 15
     }
   },
