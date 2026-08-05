@@ -1494,7 +1494,7 @@ if __name__ == '__main__':
         print(" Threads      : 32 concurrent workers")
         print("==================================================")
         serve(app, host='0.0.0.0', port=5000, threads=32)
-    except ImportError:
-        print("[Warning] Waitress belum terinstall, menggunakan server bawaan Flask...")
+    except Exception as e:
+        print(f"[Server Warning] Waitress error ({e}), menggunakan server bawaan Flask...")
         app.run(host='0.0.0.0', port=5000, debug=True)
 
