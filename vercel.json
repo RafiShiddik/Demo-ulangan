@@ -1,13 +1,7 @@
 {
   "functions": {
     "api/**/*.py": {
-      "includeFiles": [
-        "soal matematika/**",
-        "templates/**",
-        "static/**",
-        "key/**",
-        "smk budi murni 2.jpg"
-      ],
+      "includeFiles": "{soal matematika/**,templates/**,static/**,smk budi murni 2.jpg}",
       "maxDuration": 15
     }
   },
