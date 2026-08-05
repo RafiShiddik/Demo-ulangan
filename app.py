@@ -988,10 +988,27 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
         base_headers = [
             "Timestamp", "Nama Siswa", "Kelas", "Jurusan", "Materi",
             "Skor PG (Maks 40)", "Nilai Esai (Manual - Maks 60)", "Total Nilai (100)",
-            "Benar PG", "Total Soal PG", "Catatan PG"
+            "Benar PG", "Catatan PG"
         ]
-        pg_headers = [f"Soal PG {d['index']}" for d in details]
-        essay_headers = [f"Soal Esai {ed['index']}" for ed in essay_details]
+        
+        # Include question texts in headers for randomized questions transparency
+        pg_headers = []
+        for d in details:
+            q_text = d.get('question', '').strip()
+            if len(q_text) > 75:
+                q_snippet = q_text[:72] + "..."
+            else:
+                q_snippet = q_text
+            pg_headers.append(f"[PG {d['index']}] {q_snippet}" if q_snippet else f"Soal PG {d['index']}")
+            
+        essay_headers = []
+        for ed in essay_details:
+            eq_text = ed.get('question', '').strip()
+            if len(eq_text) > 75:
+                eq_snippet = eq_text[:72] + "..."
+            else:
+                eq_snippet = eq_text
+            essay_headers.append(f"[ESAI {ed['index']}] {eq_snippet}" if eq_snippet else f"Soal Esai {ed['index']}")
         
         full_headers = base_headers + pg_headers + essay_headers
 
@@ -999,7 +1016,7 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
             worksheet.append_row(full_headers)
         else:
             current_header_row = existing_rows[0]
-            if len(full_headers) > len(current_header_row):
+            if len(full_headers) >= len(current_header_row):
                 try:
                     worksheet.update(values=[full_headers], range_name='A1')
                 except Exception:
@@ -1015,7 +1032,6 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
             "",
             score,
             f"{correct_count} / {total_count}",
-            total_count,
             "ini masih nilai pg dan dapat berubah jika essai anda benar !"
         ]
         
