@@ -875,7 +875,6 @@ def get_gspread_client():
     try:
         import gspread
         from google.oauth2.service_account import Credentials
-        import google.auth.jwt
         
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -884,40 +883,51 @@ def get_gspread_client():
         
         # Clock skew compensation for Windows local dev environments
         try:
-            res = urllib.request.urlopen('https://www.google.com', timeout=2)
+            res = urllib.request.urlopen('https://www.google.com', timeout=3)
             gtime = email.utils.mktime_tz(email.utils.parsedate_tz(res.headers['Date']))
-            drift = time.time() - gtime
+            drift = int(time.time() - gtime)
         except Exception:
             drift = 0
 
         if drift > 5 or drift < -5:
-            orig_encode = getattr(google.auth.jwt, '_orig_encode', google.auth.jwt.encode)
-            google.auth.jwt._orig_encode = orig_encode
-            def patched_encode(signer, payload):
-                if 'iat' in payload:
-                    payload['iat'] = int(payload['iat'] - drift - 2)
-                    payload['exp'] = int(payload['exp'] - drift - 2)
-                return orig_encode(signer, payload)
-            google.auth.jwt.encode = patched_encode
+            def patched_assertion(self):
+                now = int(time.time() - drift)
+                payload = {
+                    'iss': self._service_account_email,
+                    'scope': ' '.join(self._scopes),
+                    'aud': self._token_uri,
+                    'iat': now - 10,
+                    'exp': now + 3600,
+                }
+                if self._subject:
+                    payload['sub'] = self._subject
+                payload.update(self._additional_claims)
+                import google.auth.jwt
+                return google.auth.jwt.encode(self._signer, payload)
+            Credentials._make_authorization_grant_assertion = patched_assertion
             
         # 1. Check environment variable GOOGLE_CREDENTIALS_JSON (Render / Cloud / Vercel deployment)
         json_env = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+        creds = None
         if json_env:
             import json
             creds_dict = json.loads(json_env)
             if 'private_key' in creds_dict and isinstance(creds_dict['private_key'], str):
                 creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-            return gspread.authorize(creds)
             
         # 2. Check local 'key/' directory or root
-        key_dirs = [os.path.join(BASE_DIR, 'key'), BASE_DIR]
-        for kd in key_dirs:
-            if os.path.exists(kd):
-                json_files = [os.path.join(kd, f) for f in os.listdir(kd) if f.endswith('.json') and f != 'package.json']
-                if json_files:
-                    creds = Credentials.from_service_account_file(json_files[0], scopes=scopes)
-                    return gspread.authorize(creds)
+        if not creds:
+            key_dirs = [os.path.join(BASE_DIR, 'key'), BASE_DIR]
+            for kd in key_dirs:
+                if os.path.exists(kd):
+                    json_files = [os.path.join(kd, f) for f in os.listdir(kd) if f.endswith('.json') and f != 'package.json']
+                    if json_files:
+                        creds = Credentials.from_service_account_file(json_files[0], scopes=scopes)
+                        break
+                        
+        if creds:
+            return gspread.authorize(creds)
     except Exception as e:
         print(f"[Google Sheets Init Error] {e}")
         
@@ -977,7 +987,8 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
             
         base_headers = [
             "Timestamp", "Nama Siswa", "Kelas", "Jurusan", "Materi",
-            "Skor PG (Maks 40)", "Benar PG", "Total Soal PG", "Catatan PG"
+            "Skor PG (Maks 40)", "Nilai Esai (Manual - Maks 60)", "Total Nilai (100)",
+            "Benar PG", "Total Soal PG", "Catatan PG"
         ]
         pg_headers = [f"Soal PG {d['index']}" for d in details]
         essay_headers = [f"Soal Esai {ed['index']}" for ed in essay_details]
@@ -1001,12 +1012,30 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
             jurusan,
             materi,
             score,
+            "",
+            score,
             f"{correct_count} / {total_count}",
             total_count,
             "ini masih nilai pg dan dapat berubah jika essai anda benar !"
         ]
-        pg_data = [d.get('student_answer', '') or '-' for d in details]
-        essay_data = [ed.get('student_answer', '') or '(Kosong)' for ed in essay_details]
+        
+        pg_data = []
+        for d in details:
+            ans = d.get('student_answer', '') or '-'
+            key = d.get('correct_answer', '')
+            if d.get('is_correct'):
+                pg_data.append(f"{ans} (✓ BENAR)")
+            elif ans != '-' and key:
+                pg_data.append(f"{ans} (✗ SALAH | Kunci: {key})")
+            elif ans == '-':
+                pg_data.append(f"- (TIDAK DIISI | Kunci: {key})")
+            else:
+                pg_data.append(ans)
+                
+        essay_data = []
+        for ed in essay_details:
+            ans_e = ed.get('student_answer', '') or '(Tidak diisi)'
+            essay_data.append(ans_e)
 
         row_data = base_data + pg_data + essay_data
         
