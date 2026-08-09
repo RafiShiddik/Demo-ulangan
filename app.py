@@ -451,7 +451,7 @@ def load_essay_questions(kelas, materi=None):
         t = ''.join(parts).strip()
         if t:
             t_low = t.lower()
-            if t_low.startswith('peringatan') or 'harap kumpulkan' in t_low or t_low == 'essay !' or t_low == 'essay' or 'isikan caranya' in t_low:
+            if t_low.startswith('peringatan') or 'harap kumpulkan' in t_low or t_low == 'essay !' or t_low == 'essay' or 'isikan caranya' in t_low or 'snbt' in t_low:
                 continue
             raw_paragraphs.append(t)
             
@@ -634,14 +634,11 @@ def login():
         for q in questions_all:
             q_idx = q['index']
             orig_keys = [k for k, v in q['choices'].items() if v]
-            shuffled_keys = orig_keys.copy()
-            if kelas.upper() != 'XII':
-                random.shuffle(shuffled_keys)
-            
+            # Keep choice options in original order (A, B, C, D, E) as requested
             mapping = {}
             display_letters = ['A', 'B', 'C', 'D', 'E'][:len(orig_keys)]
             for i, disp_char in enumerate(display_letters):
-                mapping[disp_char] = shuffled_keys[i]
+                mapping[disp_char] = orig_keys[i]
             shuffled_choices[q_idx] = mapping
             
         exam_token = generate_unique_exam_token()
