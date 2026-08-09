@@ -257,7 +257,7 @@ def load_questions(kelas, materi=None):
                 p_text = "".join(img_htmls)
             
         if p_text:
-            if p_text.lower().startswith('apa itu') or p_text.lower().startswith('peringatan') or p_text.lower() == 'pilihan ganda' or p_text.lower() == 'soal pilihan ganda':
+            if p_text.lower().startswith('peringatan') or p_text.lower() == 'pilihan ganda' or p_text.lower() == 'soal pilihan ganda':
                 continue
             paragraphs_text.append(p_text)
             
@@ -268,7 +268,8 @@ def load_questions(kelas, materi=None):
         txt = re.sub(r'^[a-eA-E][\.\)]\s*', '', txt)
         return txt
 
-    if kelas.upper() == 'XII':
+    norm_k = str(kelas).upper().replace('KELAS', '').strip()
+    if norm_k == 'XII':
         groups = [
             ([0], [1, 2, 3, 4, 5]),
             ([6], [7, 8, 9, 10, 11]),
@@ -627,7 +628,8 @@ def login():
             return render_template('login.html', error=f'Soal untuk kelas {kelas} ({materi or "Umum"}) belum tersedia!')
             
         q_order = [q['index'] for q in questions_all]
-        if kelas.upper() != 'XII':
+        norm_k = str(kelas).upper().replace('KELAS', '').strip()
+        if norm_k != 'XII':
             random.shuffle(q_order)
         
         shuffled_choices = {}
