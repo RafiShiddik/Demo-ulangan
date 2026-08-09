@@ -658,6 +658,7 @@ def login():
             'score': None,
             'answers': {},
             'essay_answers': {},
+            'lock_count': 0,
             'question_order': q_order,
             'shuffled_choices': shuffled_choices
         }
@@ -684,6 +685,10 @@ def konfirmasi():
         
     student_state = ACTIVE_STUDENTS[nama_clean]
     
+    if student_state['status'] == 'aktif':
+        session['status'] = 'aktif'
+        return redirect(url_for('ujian'))
+
     if request.method == 'POST':
         token_input = request.form.get('token', '').strip().upper()
         if not token_input:
@@ -774,8 +779,36 @@ def ujian():
     student_state = ACTIVE_STUDENTS[nama_clean]
     questions = get_shuffled_questions_for_student(student_state)
     essay_questions = load_essay_questions(kelas, materi)
+    saved_answers = student_state.get('answers', {})
+    saved_essay_answers = student_state.get('essay_answers', {})
+    lock_count = student_state.get('lock_count', 0)
     
-    return render_template('ujian.html', questions=questions, essay_questions=essay_questions, materi=materi, status=status)
+    return render_template('ujian.html', 
+                           questions=questions, 
+                           essay_questions=essay_questions, 
+                           materi=materi, 
+                           status=status,
+                           saved_answers=saved_answers,
+                           saved_essay_answers=saved_essay_answers,
+                           lock_count=lock_count)
+
+
+@app.route('/api/save_answers', methods=['POST'])
+def save_answers():
+    if 'nama_clean' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    nama_clean = session['nama_clean']
+    if nama_clean in ACTIVE_STUDENTS:
+        try:
+            data = request.get_json(silent=True) or {}
+            if 'answers' in data and isinstance(data['answers'], dict):
+                ACTIVE_STUDENTS[nama_clean]['answers'].update(data['answers'])
+            if 'essay_answers' in data and isinstance(data['essay_answers'], dict):
+                ACTIVE_STUDENTS[nama_clean]['essay_answers'].update(data['essay_answers'])
+            return jsonify({'status': 'success'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+    return jsonify({'error': 'Student state not found'}), 404
 
 
 @app.route('/lock', methods=['POST'])
@@ -787,6 +820,17 @@ def lock():
     
     if nama_clean in ACTIVE_STUDENTS and ACTIVE_STUDENTS[nama_clean]['status'] != 'selesai':
         ACTIVE_STUDENTS[nama_clean]['status'] = 'terkunci'
+        ACTIVE_STUDENTS[nama_clean]['lock_count'] = ACTIVE_STUDENTS[nama_clean].get('lock_count', 0) + 1
+        
+        # Save draft answers if included in payload
+        try:
+            data = request.get_json(silent=True) or {}
+            if 'answers' in data and isinstance(data['answers'], dict):
+                ACTIVE_STUDENTS[nama_clean]['answers'].update(data['answers'])
+            if 'essay_answers' in data and isinstance(data['essay_answers'], dict):
+                ACTIVE_STUDENTS[nama_clean]['essay_answers'].update(data['essay_answers'])
+        except Exception:
+            pass
         
         token_baru = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         ACTIVE_STUDENTS[nama_clean]['token_baru'] = token_baru
@@ -802,65 +846,64 @@ def lock():
                 "=============================\n"
                 "TOKEN BARU SISWA\n"
                 "=============================\n"
-                f"Nama    : {ACTIVE_STUDENTS[nama_clean]['nama']}\n"
-                f"Kelas   : {ACTIVE_STUDENTS[nama_clean]['kelas']}\n"
-                f"Materi  : {ACTIVE_STUDENTS[nama_clean].get('materi', '-')}\n"
-                f"Jurusan : {ACTIVE_STUDENTS[nama_clean]['jurusan']}\n"
-                f"Token   : {token_baru}\n"
-                f"Waktu   : {ACTIVE_STUDENTS[nama_clean]['lock_time']}\n"
+                f"Nama        : {ACTIVE_STUDENTS[nama_clean]['nama']}\n"
+                f"Kelas       : {ACTIVE_STUDENTS[nama_clean]['kelas']}\n"
+                f"Materi      : {ACTIVE_STUDENTS[nama_clean].get('materi', '-')}\n"
+                f"Jurusan     : {ACTIVE_STUDENTS[nama_clean]['jurusan']}\n"
+                f"Token       : {token_baru}\n"
+                f"Waktu       : {ACTIVE_STUDENTS[nama_clean]['lock_time']}\n"
+                f"Lock Count  : {ACTIVE_STUDENTS[nama_clean]['lock_count']} kali keluar halaman\n"
             )
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(content)
         except Exception as e:
             print(f"[Lock File Save Warning] Could not save token file: {e}")
             
-        session.pop('siswa', None)
-        session.pop('nama_clean', None)
-        session.pop('status', None)
+        session['status'] = 'terkunci'
             
-        return jsonify({'status': 'locked', 'token_file': filename or ''})
+        return jsonify({'status': 'locked', 'token_file': filename or '', 'lock_count': ACTIVE_STUDENTS[nama_clean]['lock_count']})
         
     return jsonify({'status': 'ignored'})
 
 @app.route('/unlock', methods=['POST'])
 def unlock():
-    if 'siswa' not in session:
+    if 'nama_clean' not in session:
         return redirect(url_for('login'))
         
     nama_clean = session['nama_clean']
     token_input = request.form.get('token_input', '').strip().upper()
     
-    expected_token = ''
     if nama_clean in ACTIVE_STUDENTS:
-        expected_token = ACTIVE_STUDENTS[nama_clean]['token_baru']
-        
-    if token_input and token_input == expected_token:
-        if nama_clean in ACTIVE_STUDENTS:
+        if ACTIVE_STUDENTS[nama_clean]['status'] == 'aktif':
+            session['status'] = 'aktif'
+            return redirect(url_for('ujian'))
+            
+        expected_token = ACTIVE_STUDENTS[nama_clean].get('token_baru', '')
+        if token_input and token_input == expected_token:
             ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
             ACTIVE_STUDENTS[nama_clean]['token_baru'] = ''
             ACTIVE_STUDENTS[nama_clean]['lock_time'] = None
             
-        session['status'] = 'aktif'
-        session['token_baru'] = ''
-        
-        filepath = os.path.join(BASE_DIR, "data_token", f"{nama_clean}.txt")
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except Exception:
-                pass
-                
-        return redirect(url_for('ujian'))
-    else:
-        student_state = ACTIVE_STUDENTS.get(nama_clean, {})
-        questions = get_shuffled_questions_for_student(student_state) if student_state else []
-        essay_questions = load_essay_questions(session.get('kelas', ''), session.get('materi', ''))
-        return render_template('ujian.html', 
-                               questions=questions, 
-                               essay_questions=essay_questions,
-                               materi=session.get('materi', ''),
-                               status='terkunci', 
-                               error='Token salah! Silakan periksa kembali atau minta ulang pengawas.')
+            session['status'] = 'aktif'
+            
+            filepath = os.path.join(BASE_DIR, "data_token", f"{nama_clean}.txt")
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+                    
+            return redirect(url_for('ujian'))
+            
+    student_state = ACTIVE_STUDENTS.get(nama_clean, {})
+    questions = get_shuffled_questions_for_student(student_state) if student_state else []
+    essay_questions = load_essay_questions(session.get('kelas', ''), session.get('materi', ''))
+    return render_template('ujian.html', 
+                           questions=questions, 
+                           essay_questions=essay_questions,
+                           materi=session.get('materi', ''),
+                           status='terkunci', 
+                           error='Token salah! Silakan periksa kembali atau minta ulang pengawas.')
 
 @app.route('/student/status')
 def student_status():
@@ -934,7 +977,7 @@ def get_gspread_client():
     return None
 
 
-def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details):
+def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details, lock_count=0):
     """Appends exam result to Google Spreadsheet in a worksheet tab specific to student's class with columns for each question."""
     try:
         gc = get_gspread_client()
@@ -988,7 +1031,7 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
         base_headers = [
             "Timestamp", "Nama Siswa", "Kelas", "Jurusan", "Materi",
             "Skor PG (Maks 40)", "Nilai Esai (Manual - Maks 60)", "Total Nilai (100)",
-            "Benar PG", "Catatan PG"
+            "Benar PG", "Frekuensi Keluar Halaman (Lock Count)", "Catatan PG"
         ]
         
         # Include question texts in headers for randomized questions transparency
@@ -1032,7 +1075,8 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
             "",
             score,
             f"{correct_count} / {total_count}",
-            "ini masih nilai pg dan dapat berubah jika essai anda benar !"
+            f"{lock_count} kali",
+            "Catatan: Ini adalah nilai sementara Pilihan Ganda. Nilai akhir dapat berubah setelah soal esai diperiksa."
         ]
         
         pg_data = []
@@ -1040,9 +1084,9 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
             ans = d.get('student_answer', '') or '-'
             key = d.get('correct_answer', '')
             if d.get('is_correct'):
-                pg_data.append(f"{ans} (✓ BENAR)")
+                pg_data.append(f"{ans} (BENAR)")
             elif ans != '-' and key:
-                pg_data.append(f"{ans} (✗ SALAH | Kunci: {key})")
+                pg_data.append(f"{ans} (SALAH | Kunci: {key})")
             elif ans == '-':
                 pg_data.append(f"- (TIDAK DIISI | Kunci: {key})")
             else:
@@ -1137,6 +1181,8 @@ def submit():
             'student_answer': ans_essay
         })
     
+    lock_count = ACTIVE_STUDENTS[nama_clean].get('lock_count', 0) if nama_clean in ACTIVE_STUDENTS else 0
+
     if nama_clean in ACTIVE_STUDENTS:
         ACTIVE_STUDENTS[nama_clean]['status'] = 'selesai'
         ACTIVE_STUDENTS[nama_clean]['score'] = score
@@ -1146,9 +1192,10 @@ def submit():
     session['status'] = 'selesai'
     session['score'] = score
     session['essay_answers'] = student_essay_answers
+    session['lock_count'] = lock_count
     
     # Save to Google Sheets
-    save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details)
+    save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details, lock_count)
     
     try:
         if not kelas.lower().startswith('kelas'):
@@ -1168,23 +1215,24 @@ def submit():
             f.write("==================================================\n")
             f.write("HASIL UJIAN SISWA - SMK BUDI MURNI 2\n")
             f.write("==================================================\n")
-            f.write(f"Nama     : {nama_siswa}\n")
-            f.write(f"Kelas    : {kelas}\n")
-            f.write(f"Materi   : {materi}\n")
-            f.write(f"Jurusan  : {jurusan}\n")
-            f.write(f"Tanggal  : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Skor PG  : {score} / 40 (Bobot 40%)\n")
-            f.write(f"Benar PG : {correct_count} dari {total_count} soal\n")
+            f.write(f"Nama                 : {nama_siswa}\n")
+            f.write(f"Kelas                : {kelas}\n")
+            f.write(f"Materi               : {materi}\n")
+            f.write(f"Jurusan              : {jurusan}\n")
+            f.write(f"Tanggal              : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Frekuensi Keluar Tab : {lock_count} kali\n")
+            f.write(f"Skor PG              : {score} / 40 (Bobot 40%)\n")
+            f.write(f"Benar PG             : {correct_count} dari {total_count} soal\n")
             f.write("--------------------------------------------------\n")
             f.write("CATATAN NILAI:\n")
-            f.write("ini masih nilai pg dan dapat berubah jika essai anda benar !\n")
+            f.write("Catatan: Ini adalah nilai sementara Pilihan Ganda. Nilai akhir dapat berubah setelah soal esai diperiksa.\n")
             f.write("--------------------------------------------------\n")
             f.write("KETERANGAN LEMBAR ESAI:\n")
             f.write("Harap tulis caranya di kertas selembar/coret coretan jika tidak maka nilai yang anda dapatkan setengah dari nilai seharusnya!\n")
             f.write("--------------------------------------------------\n")
             f.write("DETAIL JAWABAN PILIHAN GANDA:\n")
             for d in details:
-                status_symbol = "✓ BENAR" if d['is_correct'] else "✗ SALAH"
+                status_symbol = "BENAR" if d['is_correct'] else "SALAH"
                 f.write(f"Soal {d['index']}: {status_symbol}\n")
                 f.write(f"  Jawaban Siswa: {d['student_answer'] or '-'}\n")
                 f.write(f"  Jawaban Kunci: {d['correct_answer']}\n\n")
@@ -1270,13 +1318,15 @@ def submit():
                 <td>{jurusan}</td>
             </tr>
             <tr>
+                <td class="meta-label">Keluar Halaman</td>
+                <td style="color:#dc3545; font-weight:bold;">{lock_count} kali</td>
                 <td class="meta-label">Waktu Selesai</td>
-                <td colspan="3">{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td>
+                <td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td>
             </tr>
         </table>
 
         <div class="alert-warning-essay">
-            <strong>⚠️ KETENTUAN LEMBAR ESAI:</strong><br>
+            <strong>KETENTUAN LEMBAR ESAI:</strong><br>
             Harap tulis caranya di kertas selembar/coret coretan jika tidak maka nilai yang anda dapatkan setengah dari nilai seharusnya!
         </div>
         
@@ -1285,7 +1335,7 @@ def submit():
             <div class="score-val">{score} / 40</div>
             <div style="font-size:14px; color:#555;">Keterangan: Benar {correct_count} dari {total_count} soal PG (Bobot PG: 40%, Bobot Essai: 60%)</div>
             <div style="font-size:14px; color:#c2410c; font-weight:bold; margin-top:10px; padding:10px; background:#fff7ed; border:1px solid #ffedd5; border-radius:6px;">
-                ini masih nilai pg dan dapat berubah jika essai anda benar !
+                Catatan: Ini adalah nilai sementara Pilihan Ganda. Nilai akhir dapat berubah setelah soal esai diperiksa.
             </div>
         </div>
         
@@ -1343,11 +1393,14 @@ def selesai():
     nama_clean = session['nama_clean']
     student_ans = {}
     student_essay_ans = {}
+    lock_count = 0
     if nama_clean in ACTIVE_STUDENTS:
         student_ans = ACTIVE_STUDENTS[nama_clean].get('answers', {})
         student_essay_ans = ACTIVE_STUDENTS[nama_clean].get('essay_answers', {})
+        lock_count = ACTIVE_STUDENTS[nama_clean].get('lock_count', 0)
     else:
         student_essay_ans = session.get('essay_answers', {})
+        lock_count = session.get('lock_count', 0)
         
     details = []
     for q in questions:
@@ -1382,7 +1435,7 @@ def selesai():
     else:
         result_path = f"hasil ujian/{folder_kelas}/{jurusan}/{nama_siswa}/"
         
-    return render_template('selesai.html', score=score, details=details, essay_details=essay_details, result_path=result_path, materi=materi)
+    return render_template('selesai.html', score=score, details=details, essay_details=essay_details, result_path=result_path, materi=materi, lock_count=lock_count)
 
 
 @app.route('/logout')
@@ -1476,6 +1529,47 @@ def proctor_api_reset(nama):
         # Completely remove/reset student records so they can log back in
         del ACTIVE_STUDENTS[nama_clean]
         return jsonify({'status': 'success'})
+        
+    return jsonify({'error': 'Student not found'}), 404
+
+
+@app.route('/pengawas/api/kick/<nama>', methods=['POST'])
+def proctor_api_kick(nama):
+    if 'proctor' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    nama_clean = clean_filename(nama)
+    if nama_clean in ACTIVE_STUDENTS:
+        ACTIVE_STUDENTS[nama_clean]['status'] = 'terkunci'
+        ACTIVE_STUDENTS[nama_clean]['lock_count'] = ACTIVE_STUDENTS[nama_clean].get('lock_count', 0) + 1
+        
+        token_baru = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        ACTIVE_STUDENTS[nama_clean]['token_baru'] = token_baru
+        ACTIVE_STUDENTS[nama_clean]['lock_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        try:
+            token_dir = os.path.join(BASE_DIR, 'data_token')
+            os.makedirs(token_dir, exist_ok=True)
+            filename = os.path.join(token_dir, f"{nama_clean}.txt")
+            
+            content = (
+                "=============================\n"
+                "TOKEN BARU SISWA (DIKELUARKAN PENGAWAS)\n"
+                "=============================\n"
+                f"Nama        : {ACTIVE_STUDENTS[nama_clean]['nama']}\n"
+                f"Kelas       : {ACTIVE_STUDENTS[nama_clean]['kelas']}\n"
+                f"Materi      : {ACTIVE_STUDENTS[nama_clean].get('materi', '-')}\n"
+                f"Jurusan     : {ACTIVE_STUDENTS[nama_clean]['jurusan']}\n"
+                f"Token       : {token_baru}\n"
+                f"Waktu       : {ACTIVE_STUDENTS[nama_clean]['lock_time']}\n"
+                f"Catatan     : Dikeluarkan langsung oleh Pengawas Ujian\n"
+            )
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except Exception as e:
+            print(f"[Kick Token File Save Warning] {e}")
+            
+        return jsonify({'status': 'success', 'token_baru': token_baru})
         
     return jsonify({'error': 'Student not found'}), 404
 

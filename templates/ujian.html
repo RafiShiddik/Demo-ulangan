@@ -343,11 +343,11 @@
     <!-- Fullscreen Locking Overlay -->
     <div id="lockOverlay" class="overlay {% if status == 'terkunci' %}locked{% endif %}">
         <div class="overlay-content">
-            <div class="overlay-icon">🔒</div>
-            <h2>Ujian Terkunci!</h2>
-            <p>Sistem mendeteksi Anda membuka tab/aplikasi baru atau keluar dari halaman fokus lembar ujian.</p>
+            <div class="overlay-icon">STATUS TERKUNCI</div>
+            <h2>Ujian Terkunci</h2>
+            <p>Sistem mendeteksi Anda membuka tab/aplikasi lain atau keluar dari halaman ujian.</p>
             <p style="color: #cbd5e1; font-weight: 500; font-size:14px; background: rgba(0,0,0,0.15); padding: 10px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.05);">
-                Hubungi Pengawas di kelas untuk meminta <strong>Token Baru</strong> yang di-generate sistem. Silakan beritahukan nama Anda untuk dicari tokennya.
+                Hubungi Pengawas di kelas untuk meminta <strong>Token Baru</strong> yang dihasilkan oleh sistem.
             </p>
             
             {% if error %}
@@ -400,8 +400,9 @@
                     <div class="options-list">
                         {% for key, val in q.choices.items() %}
                         {% if val %}
-                        <label class="option-label" onclick="selectRadio(this)">
-                            <input type="radio" name="q{{ q.index }}" value="{{ key }}" required>
+                        {% set is_selected = saved_answers and (saved_answers.get(q.index|string) == key or saved_answers.get(q.index) == key) %}
+                        <label class="option-label {% if is_selected %}selected{% endif %}" onclick="selectRadio(this)">
+                            <input type="radio" name="q{{ q.index }}" value="{{ key }}" required {% if is_selected %}checked{% endif %}>
                             <span class="option-text-val"><strong>{{ key }}.</strong> {{ val | safe }}</span>
                         </label>
                         {% endif %}
@@ -415,8 +416,7 @@
                     <h3 style="color: #fbbf24; font-size: 18px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">Bagian II: Soal Esai</h3>
                     
                     <!-- Mandatory Warning Box -->
-                    <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #fef08a; padding: 18px 20px; border-radius: 16px; margin-bottom: 25px; line-height: 1.6; font-size: 15px; display: flex; align-items: flex-start; gap: 14px;">
-                        <span style="font-size: 24px; line-height: 1;">📌</span>
+                    <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #fef08a; padding: 18px 20px; border-radius: 16px; margin-bottom: 25px; line-height: 1.6; font-size: 15px;">
                         <div>
                             <strong style="color: #fbbf24; font-size: 16px;">PERHATIAN / KETENTUAN LEMBAR ESAI:</strong><br>
                             Harap tulis caranya di kertas selembar/coret coretan jika tidak maka nilai yang anda dapatkan setengah dari nilai seharusnya!
@@ -429,7 +429,8 @@
                             {{ eq.question | safe }}
                         </div>
                         <div style="margin-top: 15px;">
-                            <textarea name="essay{{ eq.index }}" rows="4" style="width: 100%; padding: 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; color: white; font-family: inherit; font-size: 15px; outline: none; resize: vertical;" placeholder="Tuliskan jawaban singkat Anda di sini (wajib sertakan uraian/langkah di kertas selembar)..."></textarea>
+                            {% set saved_essay_val = saved_essay_answers.get(eq.index|string, saved_essay_answers.get(eq.index, '')) if saved_essay_answers else '' %}
+                            <textarea name="essay{{ eq.index }}" rows="4" style="width: 100%; padding: 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; color: white; font-family: inherit; font-size: 15px; outline: none; resize: vertical;" placeholder="Tuliskan jawaban singkat Anda di sini (wajib sertakan uraian/langkah di kertas selembar)...">{{ saved_essay_val }}</textarea>
                         </div>
                     </div>
                     {% endfor %}
@@ -451,18 +452,81 @@
             element.classList.add('selected');
         }
 
-        let isLocked = false;
+        let isLocked = "{{ status }}" === "terkunci";
         let isSubmitting = false;
 
         document.getElementById('ujianForm').addEventListener('submit', function() {
             isSubmitting = true;
         });
 
-        function triggerLockout() {
+        // Function to collect current selected answers & essay text
+        function collectCurrentAnswers() {
+            const answers = {};
+            const essay_answers = {};
+            const inputs = document.querySelectorAll('input[type="radio"]:checked');
+            inputs.forEach(inp => {
+                const name = inp.getAttribute('name');
+                if (name && name.startsWith('q')) {
+                    answers[name.substring(1)] = inp.value;
+                }
+            });
+            const textareas = document.querySelectorAll('textarea[name^="essay"]');
+            textareas.forEach(ta => {
+                const name = ta.getAttribute('name');
+                if (name && name.startsWith('essay')) {
+                    essay_answers[name.substring(5)] = ta.value;
+                }
+            });
+            return { answers, essay_answers };
+        }
+
+        // Auto-save draft answers to server
+        function autoSaveAnswers() {
             if (isLocked || isSubmitting) return;
+            const data = collectCurrentAnswers();
+            fetch('/api/save_answers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).catch(e => console.error("Auto save failed", e));
+        }
+
+        // Auto-save event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('ujianForm');
+            form.addEventListener('change', function(e) {
+                if (e.target && e.target.type === 'radio') {
+                    autoSaveAnswers();
+                }
+            });
+            let essayDebounceTimer;
+            form.addEventListener('input', function(e) {
+                if (e.target && e.target.tagName === 'TEXTAREA') {
+                    clearTimeout(essayDebounceTimer);
+                    essayDebounceTimer = setTimeout(autoSaveAnswers, 800);
+                }
+            });
+        });
+
+        // 5 second grace period on page load to prevent instant lockouts during navigation/redirect
+        let gracePeriodActive = true;
+        setTimeout(function() {
+            gracePeriodActive = false;
+        }, 5000);
+
+        let hasBeenFocused = false;
+        if (document.hasFocus()) {
+            hasBeenFocused = true;
+        }
+        window.addEventListener('focus', function() {
+            hasBeenFocused = true;
+        });
+
+        function triggerLockout() {
+            if (isLocked || isSubmitting || gracePeriodActive) return;
             isLocked = true;
             
-            // Instantly clear the document body content to hide questions & prevent form manipulations
+            // Instantly display lock notification
             document.body.innerHTML = `
                 <div style="
                     display: flex; 
@@ -472,57 +536,56 @@
                     height: 100vh; 
                     background-color: #0b0f1a; 
                     color: #ef4444; 
-                    font-family: 'Inter', sans-serif; 
+                    font-family: 'Outfit', sans-serif; 
                     text-align: center; 
                     padding: 20px;
                 ">
-                    <div style="font-size: 80px; margin-bottom: 20px;">🔒</div>
-                    <h1 style="font-size: 32px; font-weight: 700; margin-bottom: 10px;">Sesi Ujian Dikunci!</h1>
+                    <h1 style="font-size: 32px; font-weight: 700; margin-bottom: 10px;">Sesi Ujian Terkunci</h1>
                     <p style="color: #94a3b8; font-size: 18px; max-width: 500px; line-height: 1.6; margin: 0 0 30px 0;">
-                        Sistem mendeteksi Anda meninggalkan pengerjaan ujian. Mengalihkan ke halaman log out...
+                        Sistem mendeteksi Anda meninggalkan pengerjaan ujian. Mengalihkan ke halaman konfirmasi...
                     </p>
                 </div>
             `;
             
-            // Send lock ping instantly using beacon/keepalive to prevent browser tab throttling/aborts
+            const payload = JSON.stringify(collectCurrentAnswers());
             try {
                 if (navigator.sendBeacon) {
-                    navigator.sendBeacon('/lock', '');
+                    const blob = new Blob([payload], { type: 'application/json' });
+                    navigator.sendBeacon('/lock', blob);
                 } else {
-                    fetch('/lock', {
-                        method: 'POST',
-                        keepalive: true
+                    fetch('/lock', { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: payload, 
+                        keepalive: true 
                     });
                 }
             } catch (err) {
-                console.error("Gagal melakukan pelaporan kunci (beacon) ke server:", err);
-                // Fallback fetch
-                fetch('/lock', {
-                    method: 'POST',
-                    keepalive: true
-                }).catch(e => console.error("Fallback fetch gagal:", e));
+                fetch('/lock', { method: 'POST', keepalive: true }).catch(e => console.error("Lock report failed:", e));
             }
             
-            // Redirect instan ke halaman login awal dengan detail keterangan lockout
-            window.location.href = '/login?error=Anda telah keluar karena membuka tab pengerjaan. Silakan hubungi pengawas untuk mendapatkan token baru.';
+            setTimeout(function() {
+                window.location.href = '/konfirmasi';
+            }, 600);
         }
 
         // 1. Detect switching browser tabs / minimizing window
         document.addEventListener('visibilitychange', function() {
-            if (document.visibilityState === 'hidden') {
+            if (document.visibilityState === 'hidden' && !gracePeriodActive) {
                 triggerLockout();
             }
         });
 
-        // 2. Detect leaving window focus (Alt-Tab, resizing, clicking outside)
+        // 2. Detect leaving window focus (only if grace period passed and page was focused once)
         window.addEventListener('blur', function() {
-            triggerLockout();
+            if (!gracePeriodActive && hasBeenFocused) {
+                triggerLockout();
+            }
         });
 
         // 3. Detect reloading, navigating away, or closing the tab
         window.addEventListener('beforeunload', function() {
-            if (!isLocked && !isSubmitting) {
-                // Kirim sinyal penguncian instan secara synchronous/keepalive
+            if (!isLocked && !isSubmitting && !gracePeriodActive) {
                 fetch('/lock', {
                     method: 'POST',
                     keepalive: true,
@@ -533,28 +596,24 @@
             }
         });
 
-        // 4. Fallback checking: ensure document has focus every 200ms (lebih responsif dibanding 1s)
-        setInterval(function() {
-            if (!document.hasFocus() && !isLocked) {
-                triggerLockout();
-            }
-        }, 200);
-
-        // 5. Query status from backend every 2 seconds to check if locked
+        // 4. Query status from backend every 2 seconds to handle proctor unlock or lockout
         function checkStudentStatus() {
-            if (isLocked) return;
+            if (isSubmitting) return;
             fetch('/student/status')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.status === 'terkunci') {
+                    if (data.status === 'terkunci' && !isLocked && !gracePeriodActive) {
                         triggerLockout();
+                    } else if (data.status === 'aktif' && isLocked) {
+                        // Remote unlock by proctor: reload directly back into active exam
+                        window.location.reload();
                     }
                 })
                 .catch(err => console.error("Gagal memeriksa status sesi:", err));
         }
         setInterval(checkStudentStatus, 2000);
 
-        // 3. Simple anti-cheat page protections (F12, right click block)
+        // 5. Anti-cheat shortcuts block (F12, context menu)
         document.addEventListener('contextmenu', e => e.preventDefault());
         document.addEventListener('keydown', e => {
             if (e.key === 'F12' || 

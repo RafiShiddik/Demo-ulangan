@@ -319,6 +319,15 @@
         .btn-table-unlock:hover {
             background: #dc2626;
         }
+        .btn-table-kick {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            color: #fbbf24;
+        }
+        .btn-table-kick:hover {
+            background: #f59e0b;
+            color: white;
+        }
         .btn-table-reset {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255,255,255,0.1);
@@ -380,7 +389,7 @@
                     </div>
                     <div class="form-group">
                         <p style="font-size:13px; color:#94a3b8; line-height:1.6;">
-                            📌 <strong>Informasi Pengawas:</strong><br>
+                            <strong>Informasi Pengawas:</strong><br>
                             Setiap siswa yang mengisi form login awal akan mendapatkan <strong>Token Ujian Unik</strong> yang berbeda satu sama lain.<br><br>
                             Lihat kolom <strong>"Token Masuk Ujian"</strong> di tabel untuk memberikan kode token kepada siswa sebelum mereka memulai pengerjaan.
                         </p>
@@ -404,6 +413,7 @@
                                     <th>Kelas/Jurusan</th>
                                     <th style="text-align:center;">Token Masuk Ujian</th>
                                     <th>Status</th>
+                                    <th style="text-align:center;">Keluar Tab</th>
                                     <th style="text-align:center;">Token Lock</th>
                                     <th style="text-align:center;">Nilai</th>
                                     <th>Aksi</th>
@@ -438,7 +448,7 @@
                 tbody.innerHTML = '';
                 
                 if (data.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#64748b;">Belum ada siswa yang masuk ke ujian.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#64748b;">Belum ada siswa yang masuk ke ujian.</td></tr>`;
                     return;
                 }
                 
@@ -448,23 +458,31 @@
                     let tokenCell = '-';
                     let scoreCell = '-';
                     let examTokenCell = s.exam_token ? `<span class="student-exam-key">${s.exam_token}</span>` : '-';
+                    let lockCount = s.lock_count || 0;
                     
+                    let lockCell = `<span style="font-weight:600; color:${lockCount >= 3 ? '#ef4444' : (lockCount > 0 ? '#fbbf24' : '#94a3b8')};">${lockCount}x</span>`;
+                    if (lockCount >= 3) {
+                        lockCell += `<br><span style="background:rgba(239,68,68,0.2); color:#fca5a5; font-size:10px; padding:2px 6px; border-radius:6px; font-weight:700;">PERINGATAN</span>`;
+                    }
+
                     if (s.status === 'konfirmasi') {
-                        statusLabel = `<span class="status-badge konfirmasi">⏳ Konfirmasi</span>`;
+                        statusLabel = `<span class="status-badge konfirmasi">Konfirmasi</span>`;
+                        actionButtons = `<button class="btn-table btn-table-kick" onclick="kickStudent('${s.nama}')">Keluarkan/Kunci</button>`;
                     } else if (s.status === 'aktif') {
                         statusLabel = `<span class="status-badge aktif"><span style="width:6px;height:6px;border-radius:50%;background:#10b981;"></span>Aktif</span>`;
+                        actionButtons = `<button class="btn-table btn-table-kick" onclick="kickStudent('${s.nama}')">Keluarkan/Kunci</button>`;
                     } else if (s.status === 'terkunci') {
-                        statusLabel = `<span class="status-badge terkunci">⚠️ Terkunci</span>`;
+                        statusLabel = `<span class="status-badge terkunci">Terkunci</span>`;
                         tokenCell = `<span class="student-lock-key">${s.token_baru || '-'}</span>`;
                         // Unlock action possible
-                        actionButtons = `<button class="btn-table btn-table-unlock" onclick="unlockStudent('${s.nama}')">Buka Kunci</button>`;
+                        actionButtons = `<button class="btn-table btn-table-unlock" onclick="unlockStudent('${s.nama}', ${lockCount})">Buka Kunci</button>`;
                     } else if (s.status === 'selesai') {
-                        statusLabel = `<span class="status-badge selesai">✓ Selesai</span>`;
+                        statusLabel = `<span class="status-badge selesai">Selesai</span>`;
                         scoreCell = `<strong style="color: #60a5fa;">${s.score}</strong>`;
                     }
                     
                     // Reset action is always available to clear session in emergency
-                    actionButtons += `<button class="btn-table btn-table-reset" onclick="resetStudent('${s.nama}')">Reset/Kick</button>`;
+                    actionButtons += `<button class="btn-table btn-table-reset" onclick="resetStudent('${s.nama}')">Reset Sesi</button>`;
                     
                     const row = `
                         <tr>
@@ -472,6 +490,7 @@
                             <td>${s.kelas} - ${s.jurusan}<br><small style="color:#94a3b8;">${s.materi || '-'}</small></td>
                             <td style="text-align:center;">${examTokenCell}</td>
                             <td>${statusLabel}</td>
+                            <td style="text-align:center;">${lockCell}</td>
                             <td style="text-align:center;">${tokenCell}</td>
                             <td style="text-align:center;">${scoreCell}</td>
                             <td>${actionButtons}</td>
@@ -484,8 +503,28 @@
         }
 
         // Functions to interact with proctor APIs
-        function unlockStudent(name) {
-            if (confirm(`Apakah Anda yakin ingin membuka kunci lembar ujian untuk ${name} secara remote?`)) {
+        function kickStudent(name) {
+            if (confirm(`Apakah Anda yakin ingin MENGELUARKAN / MENGUNCI LOKAL siswa '${name}' dari pengerjaan ujian? Sesi siswa akan langsung terkunci!`)) {
+                fetch(`/pengawas/api/kick/${encodeURIComponent(name)}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(`Siswa ${name} berhasil dikeluarkan dari ujian. Token buka kunci: ${data.token_baru}`);
+                        fetchStudents();
+                    } else {
+                        alert("Gagal mengeluarkan siswa");
+                    }
+                });
+            }
+        }
+
+        function unlockStudent(name, lockCount) {
+            lockCount = lockCount || 0;
+            let message = `Apakah Anda yakin ingin membuka kunci lembar ujian untuk ${name} secara remote?`;
+            if (lockCount >= 3) {
+                message = `PERATURAN / PERINGATAN:\nSiswa "${name}" telah keluar dari lembar ujian sebanyak ${lockCount} kali!\n\nApakah Anda yakin ingin membuka kuncinya?`;
+            }
+            if (confirm(message)) {
                 fetch(`/pengawas/api/unlock/${encodeURIComponent(name)}`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {

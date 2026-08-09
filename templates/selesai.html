@@ -156,10 +156,13 @@
             <div class="lbl">Nilai Pilihan Ganda (PG)</div>
             <div class="val">{{ score }} / 40</div>
             <div class="details">Bobot PG: 40% | Bobot Essai: 60%</div>
+            <div style="margin-top: 10px; font-size: 13px; font-weight: 500; color: #94a3b8;">
+                Frekuensi Meninggalkan Halaman: <strong>{{ lock_count or 0 }} kali</strong>
+            </div>
         </div>
 
         <div style="background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); color: #fef08a; padding: 15px; border-radius: 14px; margin-bottom: 25px; font-weight: 600; font-size: 15px; line-height: 1.5;">
-            ⚠️ ini masih nilai pg dan dapat berubah jika essai anda benar !
+            Catatan: Ini adalah nilai sementara Pilihan Ganda. Nilai akhir dapat berubah setelah soal esai diperiksa.
         </div>
 
         <div class="badge-info-clean">
@@ -169,7 +172,7 @@
 
         {% if essay_details %}
         <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #fef08a; padding: 14px; border-radius: 14px; margin-bottom: 25px; text-align: left; font-size: 14px; line-height: 1.5;">
-            <strong>📌 KETENTUAN LEMBAR ESAI:</strong><br>
+            <strong>KETENTUAN LEMBAR ESAI:</strong><br>
             Harap tulis caranya di kertas selembar/coret coretan jika tidak maka nilai yang anda dapatkan setengah dari nilai seharusnya!
         </div>
         {% endif %}
@@ -192,9 +195,9 @@
                     <td style="text-align: center;">{{ d.correct_answer }}</td>
                     <td>
                         {% if d.is_correct %}
-                        <span class="badge-result badge-correct">✓ BETUL</span>
+                        <span class="badge-result badge-correct">BENAR</span>
                         {% else %}
-                        <span class="badge-result badge-false">✗ SALAH</span>
+                        <span class="badge-result badge-false">SALAH</span>
                         {% endif %}
                     </td>
                 </tr>
