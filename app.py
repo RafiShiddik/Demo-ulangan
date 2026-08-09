@@ -627,19 +627,18 @@ def login():
             return render_template('login.html', error=f'Soal untuk kelas {kelas} ({materi or "Umum"}) belum tersedia!')
             
         q_order = [q['index'] for q in questions_all]
-        random.shuffle(q_order)
+        if kelas.upper() != 'XII':
+            random.shuffle(q_order)
         
         shuffled_choices = {}
         for q in questions_all:
             q_idx = q['index']
             orig_keys = [k for k, v in q['choices'].items() if v]
-            shuffled_keys = orig_keys.copy()
-            random.shuffle(shuffled_keys)
-            
+            # Keep choice options in original order (A, B, C, D, E) to prevent option mismatch
             mapping = {}
             display_letters = ['A', 'B', 'C', 'D', 'E'][:len(orig_keys)]
             for i, disp_char in enumerate(display_letters):
-                mapping[disp_char] = shuffled_keys[i]
+                mapping[disp_char] = orig_keys[i]
             shuffled_choices[q_idx] = mapping
             
         exam_token = generate_unique_exam_token()
