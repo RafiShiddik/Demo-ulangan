@@ -1,8 +1,0 @@
-.git
-.gitignore
-.venv
-.venv-1
-__pycache__
-*.pyc
-tmp/
-.python-version
