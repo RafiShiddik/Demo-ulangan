@@ -259,10 +259,7 @@ def load_questions(kelas, materi=None):
         if p_text:
             if p_text.lower().startswith('peringatan') or p_text.lower() == 'pilihan ganda' or p_text.lower() == 'soal pilihan ganda':
                 continue
-            if p_text.startswith('<div class="exam-image-container">') and paragraphs_text:
-                paragraphs_text[-1] += "<br>" + p_text
-            else:
-                paragraphs_text.append(p_text)
+            paragraphs_text.append(p_text)
             
     questions = []
     
@@ -278,11 +275,12 @@ def load_questions(kelas, materi=None):
             ([6], [7, 8, 9, 10, 11]),
             ([12, 13, 14, 15, 16], [17, 18, 19, 20, 21]),
             ([22], [23, 24, 25, 26, 27]),
-            ([28, 29], [30, 31, 32, 33, 34]),
-            ([35], [36, 37, 38, 39, 40]),
-            ([41], [42, 43, 44, 45, 46]),
-            ([47], [48, 49, 50, 51, 52]),
-            ([53], [54, 55, 56, 57, 58])
+            ([28], [29, 30, 31, 32, 33]),
+            ([34], [35, 36, 37, 38, 39]),
+            ([40], [41, 42, 43, 44, 45]),
+            ([46], [47, 48, 49, 50, 51]),
+            ([52], [53, 54, 55, 56, 57]),
+            ([58], [59, 60, 61, 62, 63])
         ]
         letters = ['A', 'B', 'C', 'D', 'E']
         for g_idx, (q_ind, opt_ind) in enumerate(groups):

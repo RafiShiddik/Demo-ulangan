@@ -192,9 +192,14 @@
         /* Override label alignment when option has image block */
         .option-label {
             align-items: flex-start;
+            cursor: pointer;
         }
         .option-label input[type="radio"] {
             margin-top: 4px;
+        }
+        .option-label .exam-image-container,
+        .option-label .exam-image {
+            pointer-events: none;
         }
 
         /* Submit Button */
@@ -446,6 +451,10 @@
     <script>
         // Highlighting radio selection changes
         function selectRadio(element) {
+            const radio = element.querySelector('input[type="radio"]');
+            if (radio) {
+                radio.checked = true;
+            }
             const container = element.closest('.options-list');
             const labels = container.querySelectorAll('.option-label');
             labels.forEach(lbl => lbl.classList.remove('selected'));
