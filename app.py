@@ -259,7 +259,10 @@ def load_questions(kelas, materi=None):
         if p_text:
             if p_text.lower().startswith('peringatan') or p_text.lower() == 'pilihan ganda' or p_text.lower() == 'soal pilihan ganda':
                 continue
-            paragraphs_text.append(p_text)
+            if p_text.startswith('<div class="exam-image-container">') and paragraphs_text:
+                paragraphs_text[-1] += "<br>" + p_text
+            else:
+                paragraphs_text.append(p_text)
             
     questions = []
     
