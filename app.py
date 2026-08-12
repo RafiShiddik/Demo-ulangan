@@ -1522,6 +1522,12 @@ def proctor_dashboard():
                            students=list(ACTIVE_STUDENTS.values()))
 
 
+@app.route('/pengawas/logout')
+def proctor_logout():
+    session.pop('proctor', None)
+    return redirect(url_for('proctor_login'))
+
+
 @app.route('/pengawas/api/students')
 def proctor_api_students():
     if 'proctor' not in session:
