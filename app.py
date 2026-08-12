@@ -1,12 +1,16 @@
 import os
 import re
+import json
 import random
 import string
 import time
 import urllib.request
 import email.utils
 from datetime import datetime
-import docx
+try:
+    import docx
+except ImportError:
+    docx = None
 
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 
@@ -1107,6 +1111,42 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
         return False
 
 
+def send_result_to_website_guru(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details, lock_count=0):
+    """Syncs student exam submission to Website Guru (PythonAnywhere) via REST API."""
+    token = os.environ.get('PYTHONANYWHERE_API_TOKEN', 'd82ad83dee1aab44732ee2eb022cda0b5ab3aec6')
+    guru_url = os.environ.get('WEBSITE_GURU_URL', 'https://achmadrafi12.pythonanywhere.com/api/receive_results')
+    
+    headers = {
+        'Authorization': f'Token {token}',
+        'Content-Type': 'application/json'
+    }
+    
+    payload = {
+        'nama_siswa': nama_siswa,
+        'kelas': kelas,
+        'jurusan': jurusan,
+        'materi': materi,
+        'score': score,
+        'correct_count': correct_count,
+        'total_count': total_count,
+        'lock_count': lock_count,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'details': details,
+        'essay_details': essay_details
+    }
+    
+    try:
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(guru_url, data=data, headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            res_body = resp.read().decode('utf-8')
+            print(f"[Website Guru Sync Success] Response: {res_body}")
+            return True
+    except Exception as e:
+        print(f"[Website Guru Sync Warning] Could not sync result to Website Guru ({guru_url}): {e}")
+        return False
+
+
 
 @app.route('/submit', methods=['POST'])
 def submit():
@@ -1196,6 +1236,9 @@ def submit():
     
     # Save to Google Sheets
     save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details, lock_count)
+    
+    # Sync result to Website Guru (PythonAnywhere)
+    send_result_to_website_guru(nama_siswa, kelas, jurusan, materi, score, correct_count, total_count, details, essay_details, lock_count)
     
     try:
         if not kelas.lower().startswith('kelas'):
@@ -1587,10 +1630,43 @@ def proctor_api_update_token():
     return jsonify({'status': 'success', 'new_token': new_token})
 
 
-@app.route('/pengawas/logout')
-def proctor_logout():
-    session.pop('proctor', None)
-    return redirect(url_for('proctor_login'))
+@app.route('/api/upload_soal', methods=['POST'])
+def api_upload_soal():
+    """API endpoint to receive incoming docx question packages from Server Guru."""
+    kelas = request.form.get('kelas', '').strip()
+    materi = request.form.get('materi', '').strip()
+    jurusan = request.form.get('jurusan', 'Semua Jurusan').strip()
+
+    if not kelas or not materi:
+        return jsonify({'status': 'error', 'message': 'Data kelas dan materi wajib diisi'}), 400
+
+    base_soal_dir = get_soal_base_dir()
+    target_dir = os.path.join(base_soal_dir, kelas, materi)
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    saved_files = []
+    for key in ['file_pg', 'file_kunci_pg', 'file_essay', 'file_kunci_essay']:
+        if key in request.files:
+            file = request.files[key]
+            if file and file.filename:
+                file_path = os.path.join(target_dir, file.filename)
+                file.save(file_path)
+                saved_files.append(file.filename)
+
+    meta = {
+        'materi': materi,
+        'kelas': kelas,
+        'jurusan': jurusan,
+        'uploaded_by': 'Server Guru Remote',
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    with open(os.path.join(target_dir, 'metadata.json'), 'w', encoding='utf-8') as mf:
+        json.dump(meta, mf, indent=2)
+
+    return jsonify({'status': 'success', 'message': f'Soal {materi} ({kelas}) berhasil diterima', 'files': saved_files}), 200
 
 
 if __name__ == '__main__':
