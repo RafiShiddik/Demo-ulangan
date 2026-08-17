@@ -327,8 +327,6 @@ def load_questions(kelas, materi=None):
             else:
                 paragraphs_text.append(combined)
             
-    questions = []
-    
     def clean_opt(txt):
         txt = txt.strip()
         txt = re.sub(r'^[a-eA-E][\.\)]\s*', '', txt)
@@ -337,110 +335,52 @@ def load_questions(kelas, materi=None):
     def strip_html(txt):
         return re.sub(r'<[^>]+>', '', txt).strip()
 
-    q_pattern = re.compile(r'^\s*(?:soal\s*)?(\d+)[\.\)]\s*(.*)', re.IGNORECASE)
-    opt_pattern = re.compile(r'^\s*([a-eA-E])[\.\)]\s*(.*)')
+    def is_question_header(p_text):
+        clean_text = strip_html(p_text).strip()
+        if not clean_text or len(clean_text) < 5:
+            return False
+        lower_text = clean_text.lower()
+        
+        if lower_text.startswith(('peringatan', 'pilihan ganda', 'soal pilihan ganda', 'apa itu', 'tipe-tipe', 'translasi vertical', 'translasi horizontal', 'pergeseran')):
+            return False
 
-    explicit_count = sum(1 for p in paragraphs_text if q_pattern.match(p))
-    
-    # Mode 1: Standard numbered questions ("1. ", "2. ", "Soal 1. ")
-    if explicit_count >= 2:
-        curr = None
-        for p in paragraphs_text:
-            qm = q_pattern.match(p)
-            if qm:
-                if curr and curr['choices']:
-                    questions.append(curr)
-                curr = {'index': len(questions) + 1, 'question': qm.group(2).strip(), 'choices': {}}
+        if re.match(r'^\s*(?:soal\s*)?\d+[\.\)]', clean_text, re.IGNORECASE):
+            return True
+
+        has_indicator = (
+            ('?' in clean_text or '...' in clean_text or 'adalah' in lower_text or 'ditranslasikan' in lower_text or 'ditransformasikan' in lower_text or 'koordinat' in lower_text or 'bayangan' in lower_text or 'banyangan' in lower_text or 'tentukan' in lower_text or 'contoh' in lower_text or 'grafik' in lower_text or 'berubah' in lower_text or 'mana' in lower_text or 'luas' in lower_text or 'dilatasikan' in lower_text) and
+            any(kw in lower_text for kw in ['koordinat', 'bayangan', 'banyangan', 'titik', 'garis', 'segitiga', 'persamaan', 'fungsi', 'hasil', 'jika', 'contoh', 'grafik', 'berubah', 'mana', 'luas', 'dilatasikan', 'matriks', 'pencerminan'])
+        )
+        return has_indicator
+
+    questions = []
+    letters = ['A', 'B', 'C', 'D', 'E']
+    i = 0
+
+    while i < len(paragraphs_text):
+        p = paragraphs_text[i]
+        if is_question_header(p):
+            q_text = re.sub(r'^\s*(?:soal\s*)?\d+[\.\)]\s*', '', p)
+            opts = []
+            j = i + 1
+            while j < len(paragraphs_text) and len(opts) < 5:
+                if is_question_header(paragraphs_text[j]):
+                    break
+                opts.append(paragraphs_text[j])
+                j += 1
+                
+            if len(opts) >= 3:
+                choices = {}
+                for l_idx, o in enumerate(opts):
+                    choices[letters[l_idx]] = clean_opt(o)
+                questions.append({
+                    'index': len(questions) + 1,
+                    'question': q_text,
+                    'choices': choices
+                })
+                i = j
                 continue
-            if curr:
-                om = opt_pattern.match(p)
-                if om:
-                    curr['choices'][om.group(1).upper()] = clean_opt(om.group(2))
-                elif not curr['choices']:
-                    curr['question'] += "<br>" + p
-        if curr and curr['choices']:
-            questions.append(curr)
-
-    # Mode 2: Word Automatic List / Block Parsing (supports 5, 4, or 3 options per question)
-    if not questions:
-        i = 0
-        while i < len(paragraphs_text):
-            matched = False
-            for window_size in [5, 4, 3]:
-                if i + window_size < len(paragraphs_text):
-                    q_cand = paragraphs_text[i]
-                    opts = paragraphs_text[i+1 : i + window_size + 1]
-                    
-                    opts_valid = all(len(strip_html(o)) < 150 for o in opts)
-                    q_lower = strip_html(q_cand).lower()
-                    
-                    is_theory_title = any(h in q_lower for h in ['apa itu', 'tipe-tipe', 'translasi vertical', 'translasi horizontal', 'pergeseran'])
-                    has_question_indicator = (
-                        ('?' in q_cand or '...' in q_cand or 'adalah' in q_lower or 'ditranslasikan' in q_lower or 'ditransformasikan' in q_lower or 'koordinat' in q_lower or 'bayangan' in q_lower or 'banyangan' in q_lower or 'tentukan' in q_lower or 'contoh' in q_lower or 'grafik' in q_lower or 'berubah' in q_lower or 'mana' in q_lower) and
-                        any(kw in q_lower for kw in ['koordinat', 'bayangan', 'banyangan', 'titik', 'garis', 'segitiga', 'persamaan', 'fungsi', 'hasil', 'jika', 'contoh', 'grafik', 'berubah', 'mana'])
-                    )
-                    
-                    if not is_theory_title and has_question_indicator and opts_valid and len(strip_html(q_cand)) > 5:
-                        choices = {}
-                        letters = ['A', 'B', 'C', 'D', 'E']
-                        for l_idx, o in enumerate(opts):
-                            choices[letters[l_idx]] = clean_opt(o)
-                        questions.append({
-                            'index': len(questions) + 1,
-                            'question': re.sub(r'^\d+[\.\)]\s*', '', q_cand),
-                            'choices': choices
-                        })
-                        i += (window_size + 1)
-                        matched = True
-                        break
-            if not matched:
-                i += 1
-
-    # Mode 3: Inline Options fallback (e.g. 3 lines per question)
-    if not questions:
-        for idx in range(0, len(paragraphs_text), 3):
-            if idx + 2 >= len(paragraphs_text):
-                break
-            q_text = paragraphs_text[idx]
-            opt_ace = paragraphs_text[idx+1]
-            opt_bd = paragraphs_text[idx+2]
-            
-            a_text = ""
-            c_text = ""
-            e_text = ""
-            c_idx = opt_ace.find('c.')
-            e_idx = opt_ace.find('e.')
-            if c_idx != -1 and e_idx != -1:
-                a_text = opt_ace[:c_idx].strip()
-                c_text = opt_ace[c_idx+2:e_idx].strip()
-                e_text = opt_ace[e_idx+2:].strip()
-            elif c_idx != -1:
-                a_text = opt_ace[:c_idx].strip()
-                c_text = opt_ace[c_idx+2:].strip()
-            else:
-                a_text = opt_ace
-                
-            b_text = ""
-            d_text = ""
-            d_idx = opt_bd.find('d.')
-            if d_idx != -1:
-                b_text = opt_bd[:d_idx].strip()
-                d_text = opt_bd[d_idx+2:].strip()
-            else:
-                b_text = opt_bd
-                
-            choices = {
-                'A': clean_opt(a_text),
-                'B': clean_opt(b_text),
-                'C': clean_opt(c_text),
-                'D': clean_opt(d_text),
-                'E': clean_opt(e_text)
-            }
-            questions.append({
-                'index': len(questions) + 1,
-                'question': re.sub(r'^\d+[\.\)]\s*', '', q_text),
-                'choices': choices
-            })
+        i += 1
 
     return questions
 
