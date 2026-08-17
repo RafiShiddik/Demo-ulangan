@@ -341,7 +341,7 @@ def load_questions(kelas, materi=None):
             return False
         lower_text = clean_text.lower()
         
-        if lower_text.startswith(('peringatan', 'pilihan ganda', 'soal pilihan ganda', 'apa itu', 'tipe-tipe', 'translasi', 'teranslasi', 'pergeseran', 'jika a', 'jika b', 'jika c', 'jika k', 'refleksi', 'dilatasi', 'rotasi', 'perhatikan')):
+        if lower_text.startswith(('peringatan', 'pilihan ganda', 'soal pilihan ganda', 'apa itu', 'tipe-tipe', 'pergeseran', 'jika a', 'jika b', 'jika c', 'jika k', 'perhatikan', 'teranslasi vertikal', 'translasi vertikal', 'translasi horizontal')):
             return False
 
         if re.match(r'^\s*(?:soal\s*)?\d+[\.\)]', clean_text, re.IGNORECASE):
@@ -350,16 +350,13 @@ def load_questions(kelas, materi=None):
         is_q_phrase = (
             clean_text.endswith('?') or 
             clean_text.endswith('...') or 
-            'adalah...' in lower_text or 
-            'adalah?' in lower_text or
-            lower_text.startswith('dibawah ini') or
-            lower_text.startswith('berikut ini') or
-            lower_text.startswith('titik') or
-            lower_text.startswith('sebuah') or
-            lower_text.startswith('bayangan') or
-            lower_text.startswith('persamaan')
+            clean_text.endswith('…') or
+            'adalah' in lower_text or 
+            lower_text.startswith(('dibawah ini', 'berikut ini', 'titik', 'sebuah', 'bayangan', 'banyangan', 'persamaan', 'grafik'))
         )
-        return is_q_phrase
+        has_action_kw = any(kw in lower_text for kw in ['ditranslasikan', 'translasikan', 'ditransformasikan', 'direfleksikan', 'refleksikan', 'didilatasikan', 'dilatasikan', 'bayangan', 'banyangan', 'koordinat', 'persamaan', 'grafik', 'berubah', 'mana', 'luas', 'hasil', 'titik', 'matriks'])
+
+        return is_q_phrase and has_action_kw
 
     questions = []
     letters = ['A', 'B', 'C', 'D', 'E']
