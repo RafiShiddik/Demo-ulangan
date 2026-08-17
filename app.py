@@ -1010,12 +1010,18 @@ def save_result_to_google_sheet(nama_siswa, kelas, jurusan, materi, score, corre
                     print(f"[Google Sheets] Could not create sheet: {ce}")
                     return False
                     
-        # Worksheet per class (e.g. "Kelas XI", "Kelas XII", "Kelas X")
+        # Worksheet per class and jurusan (e.g. "Kelas XI - TKJ", "Kelas X - DKV")
         norm_kelas = kelas.strip()
         if not norm_kelas.lower().startswith('kelas'):
-            target_sheet_title = f"Kelas {norm_kelas}"
+            norm_kelas = f"Kelas {norm_kelas}"
         else:
-            target_sheet_title = norm_kelas.title()
+            norm_kelas = norm_kelas.title()
+
+        norm_jurusan = jurusan.strip() if jurusan else ''
+        if norm_jurusan and norm_jurusan.lower() != 'semua jurusan':
+            target_sheet_title = f"{norm_kelas} - {norm_jurusan}"
+        else:
+            target_sheet_title = norm_kelas
 
         try:
             worksheet = sh.worksheet(target_sheet_title)
