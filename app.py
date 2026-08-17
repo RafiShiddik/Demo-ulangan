@@ -1403,9 +1403,19 @@ def submit():
         .math-fraction {{ display: inline-block; vertical-align: middle; text-align: center; padding: 0 4px; }}
         .math-num {{ display: block; border-bottom: 1px solid #333; padding: 0 2px; }}
         .math-den {{ display: block; padding: 0 2px; }}
+        @media print {{
+            body {{ padding: 0 !important; background: #fff !important; }}
+            .no-print {{ display: none !important; }}
+            .report-card {{ box-shadow: none !important; padding: 0 !important; max-width: 100% !important; border: none !important; }}
+        }}
     </style>
 </head>
 <body>
+    <div class="no-print" style="max-width:800px; margin: 0 auto 15px auto; text-align: right;">
+        <button onclick="window.print()" style="background:#007bff; color:white; border:none; padding:10px 20px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; box-shadow: 0 4px 10px rgba(0,123,255,0.25);">
+            🖨️ Cetak / Simpan PDF Lembar Ujian
+        </button>
+    </div>
     <div class="report-card">
         <div class="header">
             <div class="school-title">SMK Budi Murni 2</div>
