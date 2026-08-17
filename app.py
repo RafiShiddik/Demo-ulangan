@@ -341,17 +341,25 @@ def load_questions(kelas, materi=None):
             return False
         lower_text = clean_text.lower()
         
-        if lower_text.startswith(('peringatan', 'pilihan ganda', 'soal pilihan ganda', 'apa itu', 'tipe-tipe', 'translasi vertical', 'translasi horizontal', 'pergeseran')):
+        if lower_text.startswith(('peringatan', 'pilihan ganda', 'soal pilihan ganda', 'apa itu', 'tipe-tipe', 'translasi', 'teranslasi', 'pergeseran', 'jika a', 'jika b', 'jika c', 'jika k', 'refleksi', 'dilatasi', 'rotasi', 'perhatikan')):
             return False
 
         if re.match(r'^\s*(?:soal\s*)?\d+[\.\)]', clean_text, re.IGNORECASE):
             return True
 
-        has_indicator = (
-            ('?' in clean_text or '...' in clean_text or 'adalah' in lower_text or 'ditranslasikan' in lower_text or 'ditransformasikan' in lower_text or 'koordinat' in lower_text or 'bayangan' in lower_text or 'banyangan' in lower_text or 'tentukan' in lower_text or 'contoh' in lower_text or 'grafik' in lower_text or 'berubah' in lower_text or 'mana' in lower_text or 'luas' in lower_text or 'dilatasikan' in lower_text) and
-            any(kw in lower_text for kw in ['koordinat', 'bayangan', 'banyangan', 'titik', 'garis', 'segitiga', 'persamaan', 'fungsi', 'hasil', 'jika', 'contoh', 'grafik', 'berubah', 'mana', 'luas', 'dilatasikan', 'matriks', 'pencerminan'])
+        is_q_phrase = (
+            clean_text.endswith('?') or 
+            clean_text.endswith('...') or 
+            'adalah...' in lower_text or 
+            'adalah?' in lower_text or
+            lower_text.startswith('dibawah ini') or
+            lower_text.startswith('berikut ini') or
+            lower_text.startswith('titik') or
+            lower_text.startswith('sebuah') or
+            lower_text.startswith('bayangan') or
+            lower_text.startswith('persamaan')
         )
-        return has_indicator
+        return is_q_phrase
 
     questions = []
     letters = ['A', 'B', 'C', 'D', 'E']
