@@ -310,16 +310,19 @@ def load_questions(kelas, materi=None):
             if rId in images_map:
                 img_htmls.append(f'<div class="exam-image-container"><img class="exam-image" src="{images_map[rId]}" alt="Gambar Soal"></div>')
         
-        if img_htmls:
-            if p_text:
-                p_text = p_text + "<br>" + "".join(img_htmls)
-            else:
-                p_text = "".join(img_htmls)
-            
-        if p_text:
+        img_str = "".join(img_htmls)
+        
+        if p_text or img_str:
             if p_text.lower().startswith('peringatan') or p_text.lower() in ['pilihan ganda', 'soal pilihan ganda']:
                 continue
-            paragraphs_text.append(p_text)
+                
+            combined = (p_text + "<br>" + img_str).strip("<br>").strip() if p_text else img_str
+            
+            # If it's an image-only paragraph (no text, only img): attach to previous paragraph!
+            if not p_text and img_str and paragraphs_text:
+                paragraphs_text[-1] = paragraphs_text[-1] + "<br>" + img_str
+            else:
+                paragraphs_text.append(combined)
             
     questions = []
     
