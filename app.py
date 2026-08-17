@@ -1848,6 +1848,43 @@ def api_get_student_results():
         'classes': sorted(list(classes_set))
     })
 
+@app.route('/api/get_soal_list')
+def api_get_soal_list():
+    """API endpoint returning scanned questions to Portal Guru."""
+    base_dir = get_soal_base_dir()
+    materials = []
+    if os.path.exists(base_dir):
+        for class_folder in sorted(os.listdir(base_dir)):
+            class_path = os.path.join(base_dir, class_folder)
+            if os.path.isdir(class_path):
+                norm_class = class_folder.replace('Kelas ', '').replace('kelas ', '').strip()
+                norm_k = class_folder if class_folder.startswith('Kelas') else f"Kelas {class_folder}"
+                for mat_name in sorted(os.listdir(class_path)):
+                    mat_path = os.path.join(class_path, mat_name)
+                    if os.path.isdir(mat_path):
+                        files = os.listdir(mat_path)
+                        meta_path = os.path.join(mat_path, 'metadata.json')
+                        meta = {}
+                        if os.path.exists(meta_path):
+                            try:
+                                with open(meta_path, 'r', encoding='utf-8') as mf:
+                                    meta = json.load(mf)
+                            except Exception:
+                                pass
+                        materials.append({
+                            'kelas_raw': norm_k,
+                            'kelas': norm_class,
+                            'materi': mat_name,
+                            'jurusan': meta.get('jurusan', 'Semua Jurusan'),
+                            'uploaded_by': meta.get('uploaded_by', 'Server Ujian Remote'),
+                            'timestamp': meta.get('timestamp', ''),
+                            'has_pg': any(f.endswith('.docx') and 'kunci' not in f.lower() and 'essay' not in f.lower() for f in files),
+                            'has_key': any(f.endswith('.docx') and 'kunci' in f.lower() and 'essay' not in f.lower() for f in files),
+                            'has_essay': any(f.endswith('.docx') and 'essay' in f.lower() for f in files),
+                            'files': files
+                        })
+    return jsonify({'status': 'success', 'materials': materials})
+
 @app.route('/view-hasil/<path:filepath>')
 def api_view_hasil(filepath):
     """API endpoint to view or serve student exam result file/HTML."""
