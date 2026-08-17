@@ -338,7 +338,7 @@ def load_questions(kelas, materi=None):
 
     images_map = extract_images_from_docx(pg_path, kelas)
     doc = docx.Document(pg_path)
-    paragraphs_text = []
+    raw_items = []
     
     for p in doc.paragraphs:
         parts = [parse_docx_math(child) for child in p._element]
@@ -365,45 +365,70 @@ def load_questions(kelas, materi=None):
                 
         img_str = "".join(img_htmls)
         
-        if p_text or img_str:
-            if p_text.lower().startswith('peringatan') or p_text.lower() in ['pilihan ganda', 'soal pilihan ganda']:
+        if not p_text and not img_str:
+            continue
+            
+        combined = (p_text + "<br>" + img_str).strip("<br>").strip() if p_text else img_str
+
+        # 1. Split by tabs or newlines
+        lines = re.split(r'[\t\r\n]+', combined)
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            clean_l = re.sub(r'<[^>]+>', '', line).strip().lower()
+            if clean_l.startswith('peringatan') or clean_l in ['pilihan ganda', 'soal pilihan ganda']:
                 continue
                 
-            combined = (p_text + "<br>" + img_str).strip("<br>").strip() if p_text else img_str
-            
-            # An image-only paragraph is ONLY a continuation if it does NOT have numPr!
-            if not p_text and img_str and not has_numPr and paragraphs_text:
-                paragraphs_text[-1] = paragraphs_text[-1] + "<br>" + img_str
-            else:
-                paragraphs_text.append(combined)
-            
-    def clean_opt(txt):
-        txt = txt.strip()
-        txt = re.sub(r'^[a-eA-E][\.\)]\s*', '', txt)
-        return txt
+            # 2. Split inline choice items (e.g. "6c. -2e. 10" or "6 c. -2 e. 10")
+            sub_items = re.split(r'(?<=\S)\s*(?=[a-eA-E][\.\)]\s*)', line)
+            for s in sub_items:
+                s = s.strip()
+                if s:
+                    raw_items.append(s)
 
     def strip_html(txt):
         return re.sub(r'<[^>]+>', '', txt).strip()
 
-    def is_question_header(p_text):
-        clean_text = strip_html(p_text).strip()
-        if not clean_text or len(clean_text) < 5:
+    def clean_opt(txt):
+        txt = txt.strip()
+        txt = re.sub(r'^\s*\(?[a-eA-E][\.\)]\s*', '', txt)
+        return txt.strip()
+
+    def is_option_item(item):
+        clean = strip_html(item).strip()
+        return bool(re.match(r'^\s*\(?[a-eA-E][\.\)]\s*\S', clean))
+
+    def get_option_letter(item):
+        clean = strip_html(item).strip()
+        m = re.match(r'^\s*\(?([a-eA-E])[\.\)]', clean)
+        if m:
+            return m.group(1).upper()
+        return None
+
+    def is_question_header(item):
+        clean = strip_html(item).strip()
+        if not clean or len(clean) < 3:
             return False
-        lower_text = clean_text.lower()
         
-        if lower_text.startswith('peringatan') or lower_text in ['pilihan ganda', 'soal pilihan ganda']:
-            return False
-
-        if re.match(r'^\s*[a-eA-E][\.\)]', clean_text):
-            return False
-
-        if re.match(r'^\s*(?:soal\s*)?\d+[\.\)]', clean_text, re.IGNORECASE):
+        if re.match(r'^\s*(?:soal\s*)?\d+[\.\)]', clean, re.IGNORECASE):
             return True
 
-        if clean_text.endswith(('?', '...', '…', ':')):
+        if is_option_item(item):
+            return False
+
+        lower = clean.lower()
+
+        starts = (
+            'diketahui', 'fungsi', 'jika', 'perhatikan', 'hitunglah', 'tentukan',
+            'berapa', 'apa', 'nilai', 'persamaan', 'grafik', 'translasi', 'titik',
+            'sebuah', 'bayangan', 'banyangan', 'dibawah', 'berikut', 'suatu', 'pada'
+        )
+        if lower.startswith(starts):
             return True
 
-        if lower_text.startswith(('apa itu', 'perhatikan', 'teranslasi vertikal terjadi', 'translasi vertikal terjadi', 'dibawah ini', 'berikut ini', 'titik', 'sebuah', 'bayangan', 'banyangan', 'persamaan', 'grafik')):
+        if clean.endswith(('?', '...', '…', ':', '!', '=', '..')):
             return True
 
         return False
@@ -411,23 +436,31 @@ def load_questions(kelas, materi=None):
     questions = []
     letters = ['A', 'B', 'C', 'D', 'E']
     i = 0
-
-    while i < len(paragraphs_text):
-        p = paragraphs_text[i]
-        if is_question_header(p):
-            q_text = re.sub(r'^\s*(?:soal\s*)?\d+[\.\)]\s*', '', p)
+    
+    while i < len(raw_items):
+        item = raw_items[i]
+        if is_question_header(item):
+            q_text = re.sub(r'^\s*(?:soal\s*)?\d+[\.\)]\s*', '', item)
             opts = []
             j = i + 1
-            while j < len(paragraphs_text) and len(opts) < 5:
-                if is_question_header(paragraphs_text[j]):
-                    break
-                opts.append(paragraphs_text[j])
+            while j < len(raw_items):
+                next_item = raw_items[j]
+                if is_question_header(next_item):
+                    if len(opts) < 5 and not is_option_item(next_item) and not re.match(r'^\s*(?:soal\s*)?\d+[\.\)]', strip_html(next_item), re.IGNORECASE):
+                        pass
+                    else:
+                        break
+                opts.append(next_item)
                 j += 1
-                
+                if len(opts) >= 5:
+                    break
+            
             if len(opts) >= 3:
                 choices = {}
-                for l_idx, o in enumerate(opts):
-                    choices[letters[l_idx]] = clean_opt(o)
+                for idx_o, o in enumerate(opts[:5]):
+                    let = get_option_letter(o) or letters[idx_o]
+                    choices[let] = clean_opt(o)
+                
                 questions.append({
                     'index': len(questions) + 1,
                     'question': q_text,
