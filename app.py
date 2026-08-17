@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import shutil
 import random
 import string
 import time
@@ -1906,7 +1907,35 @@ def api_view_hasil(filepath):
     if os.path.exists(full_path) and full_path.startswith(os.path.abspath(hasil_dir)):
         return send_file(full_path)
 
-    return "File tidak ditemukan", 404
+@app.route('/api/delete_soal', methods=['POST'])
+def api_delete_soal():
+    """API endpoint to delete a question folder remotely from Server Guru."""
+    kelas = request.form.get('kelas', '').strip()
+    materi = request.form.get('materi', '').strip()
+
+    if not kelas or not materi:
+        return jsonify({'status': 'error', 'message': 'Kelas dan materi wajib diisi'}), 400
+
+    base_dir = get_soal_base_dir()
+    norm_k = kelas.replace('Kelas ', '').replace('kelas ', '').strip()
+    candidate_paths = [
+        os.path.join(base_dir, kelas, materi),
+        os.path.join(base_dir, f"Kelas {norm_k}", materi),
+        os.path.join(base_dir, norm_k, materi)
+    ]
+
+    target_dir = next((p for p in candidate_paths if os.path.exists(p) and os.path.isdir(p)), None)
+    if not target_dir:
+        return jsonify({'status': 'error', 'message': 'Folder materi tidak ditemukan di server siswa'}), 404
+
+    try:
+        shutil.rmtree(target_dir)
+        return jsonify({'status': 'success', 'message': f'Materi {materi} berhasil dihapus dari server siswa'}), 200
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+
 
 
 
