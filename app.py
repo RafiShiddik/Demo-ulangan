@@ -266,7 +266,7 @@ def find_materi_folder(kelas, materi=None):
     return target_class_dir
 
 def load_questions(kelas, materi=None):
-    """Load multiple choice questions dynamically from DOCX file."""
+    """Load multiple choice questions dynamically from DOCX file using robust universal parsing."""
     folder_path = find_materi_folder(kelas, materi)
     if not folder_path or not os.path.exists(folder_path):
         return []
@@ -317,7 +317,7 @@ def load_questions(kelas, materi=None):
                 p_text = "".join(img_htmls)
             
         if p_text:
-            if p_text.lower().startswith('peringatan') or p_text.lower() == 'pilihan ganda' or p_text.lower() == 'soal pilihan ganda':
+            if p_text.lower().startswith('peringatan') or p_text.lower() in ['pilihan ganda', 'soal pilihan ganda']:
                 continue
             paragraphs_text.append(p_text)
             
@@ -328,131 +328,107 @@ def load_questions(kelas, materi=None):
         txt = re.sub(r'^[a-eA-E][\.\)]\s*', '', txt)
         return txt
 
-    norm_k = str(kelas).upper().replace('KELAS', '').strip()
-    if norm_k == 'XII':
-        groups = [
-            ([0], [1, 2, 3, 4, 5]),
-            ([6], [7, 8, 9, 10, 11]),
-            ([12, 13, 14, 15, 16], [17, 18, 19, 20, 21]),
-            ([22], [23, 24, 25, 26, 27]),
-            ([28], [29, 30, 31, 32, 33]),
-            ([34], [35, 36, 37, 38, 39]),
-            ([40], [41, 42, 43, 44, 45]),
-            ([46], [47, 48, 49, 50, 51]),
-            ([52], [53, 54, 55, 56, 57]),
-            ([58], [59, 60, 61, 62, 63])
-        ]
-        letters = ['A', 'B', 'C', 'D', 'E']
-        for g_idx, (q_ind, opt_ind) in enumerate(groups):
-            q_text = "<br>".join([paragraphs_text[idx] for idx in q_ind if idx < len(paragraphs_text)])
-            choices = {}
-            for i, o_idx in enumerate(opt_ind):
-                if o_idx < len(paragraphs_text) and i < len(letters):
-                    choices[letters[i]] = clean_opt(paragraphs_text[o_idx])
-            if q_text:
-                questions.append({
-                    'index': len(questions) + 1,
-                    'question': re.sub(r'^\d+[\.\)]\s*', '', q_text),
-                    'choices': choices
-                })
-    else:
-        if len(paragraphs_text) >= 45:
-            for q_idx in range(5):
-                base = q_idx * 3
-                q_text = paragraphs_text[base]
-                opt_ace = paragraphs_text[base+1]
-                opt_bd = paragraphs_text[base+2]
+    q_pattern = re.compile(r'^\s*(?:soal\s*)?(\d+)[\.\)]\s*(.*)', re.IGNORECASE)
+    opt_pattern = re.compile(r'^\s*([a-eA-E])[\.\)]\s*(.*)')
+
+    explicit_count = sum(1 for p in paragraphs_text if q_pattern.match(p))
+    
+    # Mode 1: Standard numbered questions ("1. ", "2. ", "Soal 1. ")
+    if explicit_count >= 2:
+        curr = None
+        for p in paragraphs_text:
+            qm = q_pattern.match(p)
+            if qm:
+                if curr and curr['choices']:
+                    questions.append(curr)
+                curr = {'index': len(questions) + 1, 'question': qm.group(2).strip(), 'choices': {}}
+                continue
+            if curr:
+                om = opt_pattern.match(p)
+                if om:
+                    curr['choices'][om.group(1).upper()] = clean_opt(om.group(2))
+                elif not curr['choices']:
+                    curr['question'] += "<br>" + p
+        if curr and curr['choices']:
+            questions.append(curr)
+
+    # Mode 2: Word Automatic List / Block Parsing (5 options per question)
+    if not questions:
+        i = 0
+        while i < len(paragraphs_text):
+            if i + 5 < len(paragraphs_text):
+                q_cand = paragraphs_text[i]
+                opts = paragraphs_text[i+1:i+6]
                 
-                a_text = ""
-                c_text = ""
-                e_text = ""
-                c_idx = opt_ace.find('c.')
-                e_idx = opt_ace.find('e.')
-                if c_idx != -1 and e_idx != -1:
-                    a_text = opt_ace[:c_idx].strip()
-                    c_text = opt_ace[c_idx+2:e_idx].strip()
-                    e_text = opt_ace[e_idx+2:].strip()
-                elif c_idx != -1:
-                    a_text = opt_ace[:c_idx].strip()
-                    c_text = opt_ace[c_idx+2:].strip()
-                else:
-                    a_text = opt_ace
-                    
-                b_text = ""
-                d_text = ""
-                d_idx = opt_bd.find('d.')
-                if d_idx != -1:
-                    b_text = opt_bd[:d_idx].strip()
-                    d_text = opt_bd[d_idx+2:].strip()
-                else:
-                    b_text = opt_bd
-                    
-                choices = {
-                    'A': clean_opt(a_text),
-                    'B': clean_opt(b_text),
-                    'C': clean_opt(c_text),
-                    'D': clean_opt(d_text),
-                    'E': clean_opt(e_text)
-                }
-                questions.append({'index': q_idx + 1, 'question': re.sub(r'^\d+[\.\)]\s*', '', q_text), 'choices': choices})
+                opts_valid = all(len(o) < 150 for o in opts)
+                q_lower = q_cand.lower()
                 
-            q_base = 15
-            for q_idx in range(5, 10):
-                if q_base < len(paragraphs_text):
-                    q_text = paragraphs_text[q_base]
-                    opts = paragraphs_text[q_base+1:q_base+6]
-                    q_base += 6
+                is_theory_title = any(h in q_lower for h in ['apa itu', 'tipe-tipe', 'translasi vertical', 'translasi horizontal', 'pergeseran'])
+                has_question_indicator = (
+                    ('?' in q_cand or '...' in q_cand or 'adalah' in q_lower or 'ditranslasikan' in q_lower or 'ditransformasikan' in q_lower or 'koordinat' in q_lower or 'bayangan' in q_lower or 'banyangan' in q_lower or 'tentukan' in q_lower) and
+                    any(kw in q_lower for kw in ['koordinat', 'bayangan', 'banyangan', 'titik', 'garis', 'segitiga', 'persamaan', 'fungsi', 'hasil', 'jika'])
+                )
+                
+                if not is_theory_title and has_question_indicator and opts_valid and len(q_cand) > 8:
                     choices = {}
                     letters = ['A', 'B', 'C', 'D', 'E']
-                    for i, o in enumerate(opts):
-                        if i < len(letters):
-                            choices[letters[i]] = clean_opt(o)
-                    questions.append({'index': q_idx + 1, 'question': re.sub(r'^\d+[\.\)]\s*', '', q_text), 'choices': choices})
-        else:
-            for idx in range(0, len(paragraphs_text), 3):
-                if idx + 2 >= len(paragraphs_text):
-                    break
-                q_text = paragraphs_text[idx]
-                opt_ace = paragraphs_text[idx+1]
-                opt_bd = paragraphs_text[idx+2]
-                
-                a_text = ""
-                c_text = ""
-                e_text = ""
-                c_idx = opt_ace.find('c.')
-                e_idx = opt_ace.find('e.')
-                if c_idx != -1 and e_idx != -1:
-                    a_text = opt_ace[:c_idx].strip()
-                    c_text = opt_ace[c_idx+2:].strip()
-                    e_idx_rel = c_text.find('e.')
-                    if e_idx_rel != -1:
-                        e_text = c_text[e_idx_rel+2:].strip()
-                        c_text = c_text[:e_idx_rel].strip()
-                else:
-                    a_text = opt_ace
-                    
-                b_text = ""
-                d_text = ""
-                d_idx = opt_bd.find('d.')
-                if d_idx != -1:
-                    b_text = opt_bd[:d_idx].strip()
-                    d_text = opt_bd[d_idx+2:].strip()
-                else:
-                    b_text = opt_bd
-                    
-                choices = {
-                    'A': clean_opt(a_text),
-                    'B': clean_opt(b_text),
-                    'C': clean_opt(c_text),
-                    'D': clean_opt(d_text),
-                    'E': clean_opt(e_text)
-                }
-                questions.append({
-                    'index': len(questions) + 1,
-                    'question': re.sub(r'^\d+[\.\)]\s*', '', q_text),
-                    'choices': choices
-                })
+                    for l_idx, o in enumerate(opts):
+                        choices[letters[l_idx]] = clean_opt(o)
+                    questions.append({
+                        'index': len(questions) + 1,
+                        'question': re.sub(r'^\d+[\.\)]\s*', '', q_cand),
+                        'choices': choices
+                    })
+                    i += 6
+                    continue
+            i += 1
+
+    # Mode 3: Inline Options fallback (e.g. 3 lines per question)
+    if not questions:
+        for idx in range(0, len(paragraphs_text), 3):
+            if idx + 2 >= len(paragraphs_text):
+                break
+            q_text = paragraphs_text[idx]
+            opt_ace = paragraphs_text[idx+1]
+            opt_bd = paragraphs_text[idx+2]
             
+            a_text = ""
+            c_text = ""
+            e_text = ""
+            c_idx = opt_ace.find('c.')
+            e_idx = opt_ace.find('e.')
+            if c_idx != -1 and e_idx != -1:
+                a_text = opt_ace[:c_idx].strip()
+                c_text = opt_ace[c_idx+2:e_idx].strip()
+                e_text = opt_ace[e_idx+2:].strip()
+            elif c_idx != -1:
+                a_text = opt_ace[:c_idx].strip()
+                c_text = opt_ace[c_idx+2:].strip()
+            else:
+                a_text = opt_ace
+                
+            b_text = ""
+            d_text = ""
+            d_idx = opt_bd.find('d.')
+            if d_idx != -1:
+                b_text = opt_bd[:d_idx].strip()
+                d_text = opt_bd[d_idx+2:].strip()
+            else:
+                b_text = opt_bd
+                
+            choices = {
+                'A': clean_opt(a_text),
+                'B': clean_opt(b_text),
+                'C': clean_opt(c_text),
+                'D': clean_opt(d_text),
+                'E': clean_opt(e_text)
+            }
+            questions.append({
+                'index': len(questions) + 1,
+                'question': re.sub(r'^\d+[\.\)]\s*', '', q_text),
+                'choices': choices
+            })
+
     return questions
 
 def load_answers(kelas, materi=None):
