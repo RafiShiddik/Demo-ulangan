@@ -211,7 +211,7 @@
                 
                 <div class="form-group">
                     <label for="jurusan">Jurusan</label>
-                    <select id="jurusan" name="jurusan" required>
+                    <select id="jurusan" name="jurusan" required onchange="updateMateriOptions()">
                         <option value="" disabled selected>-- Pilih Jurusan --</option>
                         <option value="DKV 1">DKV 1</option>
                         <option value="DKV 2">DKV 2</option>
@@ -239,12 +239,18 @@
     <script>
         function updateMateriOptions() {
             const kelasVal = document.getElementById('kelas').value;
+            const jurusanVal = document.getElementById('jurusan').value;
             const materiSelect = document.getElementById('materi');
             if (!kelasVal) return;
             
             materiSelect.innerHTML = '<option value="" disabled selected>Memuat materi...</option>';
             
-            fetch('/api/materis/' + encodeURIComponent(kelasVal))
+            let url = '/api/materis/' + encodeURIComponent(kelasVal);
+            if (jurusanVal) {
+                url += '?jurusan=' + encodeURIComponent(jurusanVal);
+            }
+            
+            fetch(url)
                 .then(res => {
                     if (!res.ok) {
                         throw new Error('Network error');
@@ -263,15 +269,16 @@
                         });
                     } else {
                         const opt = document.createElement('option');
-                        opt.value = 'Matematika Umum';
-                        opt.textContent = 'Matematika Umum';
+                        opt.value = '';
+                        opt.textContent = '-- Tidak Ada Soal Untuk Jurusan Ini --';
+                        opt.disabled = true;
                         opt.selected = true;
                         materiSelect.appendChild(opt);
                     }
                 })
                 .catch(err => {
                     console.error('Error fetching materis:', err);
-                    materiSelect.innerHTML = '<option value="Matematika Umum" selected>Matematika Umum</option>';
+                    materiSelect.innerHTML = '<option value="" disabled selected>Gagal memuat materi</option>';
                 });
         }
 

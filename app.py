@@ -612,16 +612,65 @@ def index():
             return redirect(url_for('konfirmasi'))
     return redirect(url_for('login'))
 
+def check_jurusan_allowed(folder_path, student_jurusan):
+    """
+    Checks if student_jurusan is allowed to access the material in folder_path based on metadata.json.
+    Returns (is_allowed: bool, target_jurusan: str).
+    """
+    if not folder_path or not os.path.exists(folder_path):
+        return True, "Semua Jurusan"
+    
+    meta_path = os.path.join(folder_path, 'metadata.json')
+    if not os.path.exists(meta_path):
+        return True, "Semua Jurusan"
+        
+    try:
+        with open(meta_path, 'r', encoding='utf-8') as f:
+            meta = json.load(f)
+            
+        target_jurusan = meta.get('jurusan', 'Semua Jurusan').strip()
+        if not target_jurusan or target_jurusan.lower() == 'semua jurusan':
+            return True, target_jurusan
+            
+        if not student_jurusan:
+            return True, target_jurusan
+
+        student_j = student_jurusan.strip().upper()
+        base_code = student_j.split()[0] if student_j else student_j
+        
+        allowed_items = [j.strip().upper() for j in target_jurusan.split(',')]
+        
+        for allowed in allowed_items:
+            allowed_clean = allowed.strip()
+            if allowed_clean in student_j or student_j in allowed_clean or allowed_clean in base_code or base_code in allowed_clean:
+                return True, target_jurusan
+            if (base_code in ['TKJ'] and 'TKJ' in allowed_clean) or \
+               (base_code in ['MP', 'MPLB'] and ('MP' in allowed_clean or 'MPLB' in allowed_clean)) or \
+               (base_code in ['AK', 'AKL'] and ('AK' in allowed_clean or 'AKL' in allowed_clean)) or \
+               (base_code in ['BR', 'BD', 'BDP'] and ('BR' in allowed_clean or 'BD' in allowed_clean)) or \
+               (base_code in ['DKV'] and 'DKV' in allowed_clean):
+                return True, target_jurusan
+                
+        return False, target_jurusan
+    except Exception as e:
+        print(f"[Check Jurusan Error] {e}")
+        return True, "Semua Jurusan"
+
 @app.route('/api/materis/<kelas>')
 def api_materis(kelas):
+    student_jurusan = request.args.get('jurusan', '').strip()
     materi_map = scan_soal_directory()
     norm_kelas = kelas.replace('Kelas ', '').replace('kelas ', '').strip().upper()
     materis = []
     for k, v in materi_map.items():
         if k.upper() == norm_kelas:
-            materis = v
+            for mat in v:
+                folder_path = find_materi_folder(kelas, mat)
+                is_allowed, _ = check_jurusan_allowed(folder_path, student_jurusan)
+                if is_allowed:
+                    materis.append(mat)
             break
-    if not materis:
+    if not materis and not student_jurusan:
         materis = ['Matematika Umum']
     return jsonify({'kelas': kelas, 'materis': materis})
 
@@ -679,6 +728,12 @@ def login():
                 session['nama_clean'] = nama_clean
                 session['status'] = 'konfirmasi'
                 return redirect(url_for('konfirmasi'))
+
+        folder_path = find_materi_folder(kelas, materi)
+        if folder_path:
+            is_allowed, target_j = check_jurusan_allowed(folder_path, jurusan)
+            if not is_allowed:
+                return render_template('login.html', error=f'Soal "{materi}" khusus ditujukan untuk jurusan ({target_j}). Jurusan {jurusan} tidak dapat mengikuti ujian ini!')
 
         questions_all = load_questions(kelas, materi)
         if not questions_all and avail_materis:
