@@ -328,6 +328,9 @@ def load_questions(kelas, materi=None):
         txt = re.sub(r'^[a-eA-E][\.\)]\s*', '', txt)
         return txt
 
+    def strip_html(txt):
+        return re.sub(r'<[^>]+>', '', txt).strip()
+
     q_pattern = re.compile(r'^\s*(?:soal\s*)?(\d+)[\.\)]\s*(.*)', re.IGNORECASE)
     opt_pattern = re.compile(r'^\s*([a-eA-E])[\.\)]\s*(.*)')
 
@@ -360,16 +363,16 @@ def load_questions(kelas, materi=None):
                 q_cand = paragraphs_text[i]
                 opts = paragraphs_text[i+1:i+6]
                 
-                opts_valid = all(len(o) < 150 for o in opts)
-                q_lower = q_cand.lower()
+                opts_valid = all(len(strip_html(o)) < 150 for o in opts)
+                q_lower = strip_html(q_cand).lower()
                 
                 is_theory_title = any(h in q_lower for h in ['apa itu', 'tipe-tipe', 'translasi vertical', 'translasi horizontal', 'pergeseran'])
                 has_question_indicator = (
-                    ('?' in q_cand or '...' in q_cand or 'adalah' in q_lower or 'ditranslasikan' in q_lower or 'ditransformasikan' in q_lower or 'koordinat' in q_lower or 'bayangan' in q_lower or 'banyangan' in q_lower or 'tentukan' in q_lower) and
-                    any(kw in q_lower for kw in ['koordinat', 'bayangan', 'banyangan', 'titik', 'garis', 'segitiga', 'persamaan', 'fungsi', 'hasil', 'jika'])
+                    ('?' in q_cand or '...' in q_cand or 'adalah' in q_lower or 'ditranslasikan' in q_lower or 'ditransformasikan' in q_lower or 'koordinat' in q_lower or 'bayangan' in q_lower or 'banyangan' in q_lower or 'tentukan' in q_lower or 'contoh' in q_lower) and
+                    any(kw in q_lower for kw in ['koordinat', 'bayangan', 'banyangan', 'titik', 'garis', 'segitiga', 'persamaan', 'fungsi', 'hasil', 'jika', 'contoh'])
                 )
                 
-                if not is_theory_title and has_question_indicator and opts_valid and len(q_cand) > 8:
+                if not is_theory_title and has_question_indicator and opts_valid and len(strip_html(q_cand)) > 5:
                     choices = {}
                     letters = ['A', 'B', 'C', 'D', 'E']
                     for l_idx, o in enumerate(opts):
