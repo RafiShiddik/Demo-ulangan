@@ -539,19 +539,20 @@
             }).catch(e => console.error("Auto save failed", e));
         }
 
-        // Auto-save event listeners
+        // Auto-save event listeners (debounced to avoid server overload)
+        let autoSaveDebounceTimer;
         document.addEventListener('DOMContentLoaded', function() {
             const form = document.getElementById('ujianForm');
             form.addEventListener('change', function(e) {
                 if (e.target && e.target.type === 'radio') {
-                    autoSaveAnswers();
+                    clearTimeout(autoSaveDebounceTimer);
+                    autoSaveDebounceTimer = setTimeout(autoSaveAnswers, 1500);
                 }
             });
-            let essayDebounceTimer;
             form.addEventListener('input', function(e) {
                 if (e.target && e.target.tagName === 'TEXTAREA') {
-                    clearTimeout(essayDebounceTimer);
-                    essayDebounceTimer = setTimeout(autoSaveAnswers, 800);
+                    clearTimeout(autoSaveDebounceTimer);
+                    autoSaveDebounceTimer = setTimeout(autoSaveAnswers, 2500);
                 }
             });
         });
@@ -656,7 +657,7 @@
             }
         });
 
-        // 4. Query status from backend every 2 seconds to handle proctor unlock or lockout
+        // 4. Query status from backend every 5 seconds to handle proctor unlock or lockout (Optimized interval)
         function checkStudentStatus() {
             if (isSubmitting) return;
             fetch('/student/status')
@@ -671,7 +672,7 @@
                 })
                 .catch(err => console.error("Gagal memeriksa status sesi:", err));
         }
-        setInterval(checkStudentStatus, 2000);
+        setInterval(checkStudentStatus, 5000);
 
         // 5. Anti-cheat shortcuts block (F12, context menu, anti-screenshot, anti-print)
         document.addEventListener('contextmenu', e => e.preventDefault());
