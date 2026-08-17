@@ -154,6 +154,26 @@ def parse_docx_math(el):
     
     return ''.join(parse_docx_math(c) for c in el)
 
+def fix_math_html(txt):
+    """Automatically repairs broken/unclosed HTML math fraction tags and missing opening brackets."""
+    if not txt:
+        return txt
+    txt = txt.strip()
+    
+    # 1. Fix missing opening bracket '<' before span, /span, sup, /sup
+    txt = re.sub(r'(?<!<)span\s+class=["\'](math-[^"\']+)["\']>', r'<span class="\1">', txt)
+    txt = re.sub(r'(?<!<)/span>', '</span>', txt)
+    txt = re.sub(r'(?<![</])sup>', '<sup>', txt)
+    txt = re.sub(r'(?<!<)/sup>', '</sup>', txt)
+
+    # 2. Fix unmatched span tags
+    open_spans = len(re.findall(r'<span\b', txt))
+    close_spans = len(re.findall(r'</span>', txt))
+    if open_spans > close_spans:
+        txt += '</span>' * (open_spans - close_spans)
+        
+    return txt
+
 def extract_images_from_docx(doc_path, class_name):
     """Extracts all images from a docx file and saves them to a static directory."""
     if not os.path.exists(doc_path):
@@ -459,11 +479,11 @@ def load_questions(kelas, materi=None):
                 choices = {}
                 for idx_o, o in enumerate(opts[:5]):
                     let = get_option_letter(o) or letters[idx_o]
-                    choices[let] = clean_opt(o)
+                    choices[let] = fix_math_html(clean_opt(o))
                 
                 questions.append({
                     'index': len(questions) + 1,
-                    'question': q_text,
+                    'question': fix_math_html(q_text),
                     'choices': choices
                 })
                 i = j
@@ -547,7 +567,7 @@ def load_essay_questions(kelas, materi=None):
             q_text = "<br>".join([raw_paragraphs[i] for i in grp if i < len(raw_paragraphs)])
             essay_questions.append({
                 'index': idx + 1,
-                'question': re.sub(r'^\d+[\.\)]\s*', '', q_text)
+                'question': fix_math_html(re.sub(r'^\d+[\.\)]\s*', '', q_text))
             })
         return essay_questions
 
@@ -572,7 +592,7 @@ def load_essay_questions(kelas, materi=None):
     for idx, q in enumerate(questions):
         essay_questions.append({
             'index': idx + 1,
-            'question': q['text']
+            'question': fix_math_html(q['text'])
         })
     return essay_questions
 
