@@ -183,7 +183,6 @@
                 <tr>
                     <th>No. Soal</th>
                     <th>Jawaban Anda</th>
-                    <th>Jawaban Kunci</th>
                     <th>Hasil</th>
                 </tr>
             </thead>
@@ -192,7 +191,6 @@
                 <tr>
                     <td><strong>Soal {{ d.index }}</strong></td>
                     <td style="text-align: center;">{{ d.student_answer or '-' }}</td>
-                    <td style="text-align: center;">{{ d.correct_answer }}</td>
                     <td>
                         {% if d.is_correct %}
                         <span class="badge-result badge-correct">BENAR</span>

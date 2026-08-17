@@ -678,19 +678,18 @@ def login():
             return render_template('login.html', error=f'Soal untuk kelas {kelas} ({materi or "Umum"}) belum tersedia!')
             
         q_order = [q['index'] for q in questions_all]
-        norm_k = str(kelas).upper().replace('KELAS', '').strip()
-        if norm_k != 'XII':
-            random.shuffle(q_order)
+        random.shuffle(q_order)
         
         shuffled_choices = {}
         for q in questions_all:
             q_idx = q['index']
             orig_keys = [k for k, v in q['choices'].items() if v]
-            # Keep choice options in original order (A, B, C, D, E) to prevent option mismatch
+            shuffled_orig = orig_keys.copy()
+            random.shuffle(shuffled_orig)
             mapping = {}
             display_letters = ['A', 'B', 'C', 'D', 'E'][:len(orig_keys)]
             for i, disp_char in enumerate(display_letters):
-                mapping[disp_char] = orig_keys[i]
+                mapping[disp_char] = shuffled_orig[i]
             shuffled_choices[q_idx] = mapping
             
         exam_token = generate_unique_exam_token()
@@ -1242,17 +1241,22 @@ def submit():
     for q in questions:
         q_idx = q['index']
         ans = request.form.get(f'q{q_idx}', '').strip().upper()
+        if not ans and nama_clean in ACTIVE_STUDENTS:
+            saved_a = ACTIVE_STUDENTS[nama_clean].get('answers', {})
+            ans = (saved_a.get(q_idx) or saved_a.get(str(q_idx)) or '').strip().upper()
         
         if nama_clean in ACTIVE_STUDENTS:
-            mapping = ACTIVE_STUDENTS[nama_clean].get('shuffled_choices', {}).get(q_idx, {})
-            real_ans = mapping.get(ans, ans)
+            st_choices = ACTIVE_STUDENTS[nama_clean].get('shuffled_choices', {})
+            mapping = st_choices.get(q_idx) or st_choices.get(str(q_idx)) or {}
+            real_ans = mapping.get(ans, ans) if ans else ''
         else:
             real_ans = ans
             
         student_answers[q_idx] = real_ans
+        student_answers[str(q_idx)] = real_ans
         
-        expected = correct_answers.get(q_idx, '')
-        is_correct = (real_ans == expected)
+        expected = (correct_answers.get(q_idx) or correct_answers.get(str(q_idx)) or '').strip().upper()
+        is_correct = bool(real_ans and real_ans == expected)
         if is_correct:
             correct_count += 1
             
@@ -1484,7 +1488,7 @@ def selesai():
     if 'siswa' not in session:
         return redirect(url_for('login'))
         
-    score = session.get('score', 0.0)
+    score = session.get('score', None)
     kelas = session.get('kelas', 'XI')
     materi = session.get('materi', '')
     jurusan = session.get('jurusan', '')
@@ -1502,22 +1506,35 @@ def selesai():
         student_ans = ACTIVE_STUDENTS[nama_clean].get('answers', {})
         student_essay_ans = ACTIVE_STUDENTS[nama_clean].get('essay_answers', {})
         lock_count = ACTIVE_STUDENTS[nama_clean].get('lock_count', 0)
+        if score is None or score == 0.0 or score == 0:
+            score = ACTIVE_STUDENTS[nama_clean].get('score', None)
     else:
         student_essay_ans = session.get('essay_answers', {})
         lock_count = session.get('lock_count', 0)
         
     details = []
+    correct_count = 0
+    total_count = len(questions)
     for q in questions:
         idx = q['index']
-        ans = student_ans.get(idx, '')
-        expected = correct_answers.get(idx, '')
+        ans = (student_ans.get(idx) or student_ans.get(str(idx)) or '').strip().upper()
+        expected = (correct_answers.get(idx) or correct_answers.get(str(idx)) or '').strip().upper()
+        is_correct = bool(ans and ans == expected)
+        if is_correct:
+            correct_count += 1
         details.append({
             'index': idx,
             'question': q['question'],
             'student_answer': ans,
             'correct_answer': expected,
-            'is_correct': (ans == expected)
+            'is_correct': is_correct
         })
+        
+    calc_score = round((correct_count / total_count * 40), 2) if total_count > 0 else 0.0
+    if score is None or score == 0.0 or score == 0 or (calc_score > 0 and score == 0):
+        score = calc_score
+    if isinstance(score, float) and score.is_integer():
+        score = int(score)
         
     essay_details = []
     for eq in essay_questions:
