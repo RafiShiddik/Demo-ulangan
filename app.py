@@ -7,6 +7,11 @@ import time
 import urllib.request
 import email.utils
 from datetime import datetime
+import urllib.parse
+try:
+    import requests
+except ImportError:
+    requests = None
 try:
     import docx
 except ImportError:
@@ -152,8 +157,58 @@ def get_soal_base_dir():
             return c
     return os.path.join(BASE_DIR, 'soal matematika')
 
+def sync_remote_soal_from_cloud():
+    """Syncs missing question files from PythonAnywhere cloud (achmadrafi12) to local 'soal matematika/' directory."""
+    token = os.environ.get('PYTHONANYWHERE_API_TOKEN', 'd82ad83dee1aab44732ee2eb022cda0b5ab3aec6')
+    user = os.environ.get('PYTHONANYWHERE_USER', 'achmadrafi12')
+    if not token or not user or requests is None:
+        return
+    
+    headers = {'Authorization': f'Token {token}'}
+    base_dir = get_soal_base_dir()
+    os.makedirs(base_dir, exist_ok=True)
+    
+    try:
+        url = f'https://www.pythonanywhere.com/api/v0/user/{user}/files/path/home/{user}/soal%20matematika/'
+        r = requests.get(url, headers=headers, timeout=4)
+        if r.status_code != 200:
+            return
+        
+        data = r.json()
+        for k_name, k_info in data.items():
+            if isinstance(k_info, dict) and k_info.get('type') == 'directory':
+                class_url = f'https://www.pythonanywhere.com/api/v0/user/{user}/files/path/home/{user}/soal%20matematika/{urllib.parse.quote(k_name)}/'
+                cr = requests.get(class_url, headers=headers, timeout=4)
+                if cr.status_code == 200:
+                    c_data = cr.json()
+                    for m_name, m_info in c_data.items():
+                        if isinstance(m_info, dict) and m_info.get('type') == 'directory':
+                            mat_url = f'https://www.pythonanywhere.com/api/v0/user/{user}/files/path/home/{user}/soal%20matematika/{urllib.parse.quote(k_name)}/{urllib.parse.quote(m_name)}/'
+                            mr = requests.get(mat_url, headers=headers, timeout=4)
+                            if mr.status_code == 200:
+                                m_files = mr.json()
+                                local_m_dir = os.path.join(base_dir, k_name, m_name)
+                                os.makedirs(local_m_dir, exist_ok=True)
+                                
+                                for f_name, f_info in m_files.items():
+                                    if isinstance(f_info, dict) and f_info.get('type') == 'file':
+                                        local_f_path = os.path.join(local_m_dir, f_name)
+                                        if not os.path.exists(local_f_path):
+                                            file_dl_url = f'https://www.pythonanywhere.com/api/v0/user/{user}/files/path/home/{user}/soal%20matematika/{urllib.parse.quote(k_name)}/{urllib.parse.quote(m_name)}/{urllib.parse.quote(f_name)}'
+                                            fr = requests.get(file_dl_url, headers=headers, timeout=8)
+                                            if fr.status_code == 200:
+                                                with open(local_f_path, 'wb') as f_out:
+                                                    f_out.write(fr.content)
+                                                print(f"[Cloud Soal Sync] Downloaded {k_name}/{m_name}/{f_name}")
+    except Exception as e:
+        print(f"[Cloud Soal Sync Error] {e}")
+
 def scan_soal_directory():
     """Scans 'soal matematika/' and returns a dict mapping kelas -> list of available materis."""
+    try:
+        sync_remote_soal_from_cloud()
+    except Exception:
+        pass
     base_dir = get_soal_base_dir()
     materi_map = {}
     if not os.path.exists(base_dir):
