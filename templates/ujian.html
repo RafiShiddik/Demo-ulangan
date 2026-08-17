@@ -11,6 +11,21 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        @media print {
+            body { display: none !important; }
+            html { display: none !important; }
+        }
+        img {
+            pointer-events: none;
+            -webkit-user-drag: none;
+            user-select: none;
         }
         body {
             font-family: 'Outfit', sans-serif;
@@ -18,8 +33,6 @@
             color: #e2e8f0;
             padding: 40px 20px;
             min-height: 100vh;
-            user-select: none;
-            -webkit-user-select: none;
         }
         .container {
             max-width: 800px;
@@ -622,14 +635,60 @@
         }
         setInterval(checkStudentStatus, 2000);
 
-        // 5. Anti-cheat shortcuts block (F12, context menu)
+        // 5. Anti-cheat shortcuts block (F12, context menu, anti-screenshot, anti-print)
         document.addEventListener('contextmenu', e => e.preventDefault());
+
+        // Block web notifications
+        if ('Notification' in window) {
+            try {
+                window.Notification.requestPermission = function() { return Promise.resolve('denied'); };
+            } catch(e) {}
+        }
+
+        // Clear clipboard to prevent screenshot pasting
+        function clearClipboard() {
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText('');
+                }
+            } catch (e) {}
+        }
+
+        // Handle screenshot detection & black screen overlay
+        function handleScreenshotAttempt() {
+            clearClipboard();
+            const cover = document.createElement('div');
+            cover.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000;z-index:99999;display:flex;justify-content:center;align-items:center;color:#ef4444;font-size:24px;font-weight:700;font-family:sans-serif;text-align:center;padding:20px;';
+            cover.innerHTML = '<div>🚫 TANGKAPAN LAYAR / SCREENSHOT DIBLOKIR!<br><span style="font-size:16px;color:#94a3b8;margin-top:10px;display:block;">Sesi ujian akan terkunci secara otomatis.</span></div>';
+            document.body.appendChild(cover);
+            setTimeout(() => {
+                if (cover.parentNode) cover.parentNode.removeChild(cover);
+            }, 2500);
+            triggerLockout();
+        }
+
+        document.addEventListener('keyup', function(e) {
+            if (e.key === 'PrintScreen' || e.keyCode === 44) {
+                handleScreenshotAttempt();
+            }
+        });
+
         document.addEventListener('keydown', e => {
-            if (e.key === 'F12' || 
-                (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'C' || e.key === 'c' || e.key === 'J' || e.key === 'j')) || 
-                (e.ctrlKey && (e.key === 'U' || e.key === 'u' || e.key === 'S' || e.key === 's'))) {
+            // Block PrintScreen, Ctrl+P, Ctrl+S, Win+Shift+S, Ctrl+Shift+S, F12, Ctrl+U, Inspect Element
+            if (e.key === 'PrintScreen' || e.keyCode === 44 ||
+                (e.ctrlKey && (e.key === 'p' || e.key === 'P' || e.key === 's' || e.key === 'S' || e.key === 'u' || e.key === 'U')) ||
+                (e.metaKey && e.shiftKey && (e.key === '3' || e.key === '4' || e.key === 's' || e.key === 'S')) ||
+                (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's' || e.key === 'I' || e.key === 'i' || e.key === 'C' || e.key === 'c' || e.key === 'J' || e.key === 'j')) ||
+                e.key === 'F12') {
                 e.preventDefault();
-                alert('Tindakan ini diblokir demi keamanan ujian!');
+                e.stopPropagation();
+                clearClipboard();
+
+                if (e.key === 'PrintScreen' || e.keyCode === 44 || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
+                    handleScreenshotAttempt();
+                } else {
+                    alert('Tindakan ini (Screenshot/Cetak/Inspeksi Halaman) diblokir demi keamanan ujian!');
+                }
             }
         });
     </script>
