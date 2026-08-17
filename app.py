@@ -1746,6 +1746,133 @@ def api_upload_soal():
     return jsonify({'status': 'success', 'message': f'Soal {materi} ({kelas}) berhasil diterima', 'files': saved_files}), 200
 
 
+def parse_hasil_txt_file(txt_path):
+    info = {}
+    if not os.path.exists(txt_path):
+        return info
+    try:
+        with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                if ':' in line:
+                    parts = line.split(':', 1)
+                    k_strip = parts[0].strip().lower()
+                    v_strip = parts[1].strip()
+                    if 'nama' in k_strip:
+                        info['nama'] = v_strip
+                    elif 'kelas' in k_strip:
+                        info['kelas'] = v_strip
+                    elif 'materi' in k_strip:
+                        info['materi'] = v_strip
+                    elif 'jurusan' in k_strip:
+                        info['jurusan'] = v_strip
+                    elif 'tanggal' in k_strip or 'waktu' in k_strip:
+                        info['tanggal'] = v_strip
+                    elif 'skor pg' in k_strip or 'nilai pg' in k_strip:
+                        info['skor_pg'] = v_strip.split('/')[0].strip()
+    except Exception:
+        pass
+    return info
+
+@app.route('/api/get_student_results')
+def api_get_student_results():
+    """API endpoint to scan local hasil ujian directory and return results JSON to Portal Guru."""
+    candidate_dirs = [
+        os.path.join(BASE_DIR, 'hasil ujian'),
+        os.path.join(os.path.dirname(BASE_DIR), 'hasil ujian'),
+        os.path.join(os.getcwd(), 'hasil ujian')
+    ]
+    hasil_dir = next((d for d in candidate_dirs if os.path.exists(d) and os.path.isdir(d)), os.path.join(BASE_DIR, 'hasil ujian'))
+    
+    results = []
+    classes_set = set()
+
+    if os.path.exists(hasil_dir):
+        visited_dirs = set()
+        for root, dirs, files in os.walk(hasil_dir):
+            if os.path.abspath(root) == os.path.abspath(hasil_dir) or 'readme' in root.lower():
+                continue
+            
+            target_files = [f for f in files if f in ['hasil.txt', 'hasil_ujian.html'] or (f.endswith('.txt') and 'readme' not in f.lower()) or f.endswith('.html')]
+            if not target_files or root in visited_dirs:
+                continue
+
+            visited_dirs.add(root)
+            txt_file = next((f for f in files if f == 'hasil.txt'), None) or next((f for f in files if f.endswith('.txt')), None)
+            html_file = next((f for f in files if f == 'hasil_ujian.html'), None) or next((f for f in files if f.endswith('.html')), None)
+
+            main_file = txt_file or html_file
+            if not main_file:
+                continue
+
+            file_path = os.path.join(root, main_file)
+            rel_path = os.path.relpath(file_path, hasil_dir).replace('\\', '/')
+            parts = rel_path.split('/')
+
+            parsed = parse_hasil_txt_file(os.path.join(root, txt_file)) if txt_file else {}
+
+            folder_kelas = parts[0] if len(parts) >= 1 else 'Umum'
+            folder_materi = parts[1] if len(parts) >= 4 else (parts[1] if len(parts) == 3 else 'Umum')
+            folder_jurusan = parts[2] if len(parts) >= 4 else (parts[1] if len(parts) == 3 else 'Semua Jurusan')
+            folder_student = parts[3] if len(parts) >= 4 else (parts[2] if len(parts) == 3 else parts[-2] if len(parts) >= 2 else 'Siswa')
+
+            raw_kelas = parsed.get('kelas') or folder_kelas
+            norm_kelas = raw_kelas if raw_kelas.startswith('Kelas') else f"Kelas {raw_kelas}"
+            materi = parsed.get('materi') or folder_materi
+            jurusan = parsed.get('jurusan') or folder_jurusan
+            student_name = parsed.get('nama') or folder_student.replace('_', ' ').title()
+            mod_time = datetime.fromtimestamp(os.path.getmtime(file_path)).strftime('%Y-%m-%d %H:%M:%S')
+            date_str = parsed.get('tanggal') or mod_time
+            skor_pg = parsed.get('skor_pg') or '-'
+
+            view_rel = rel_path
+            if html_file:
+                view_rel = os.path.relpath(os.path.join(root, html_file), hasil_dir).replace('\\', '/')
+
+            classes_set.add(norm_kelas)
+            results.append({
+                'filename': main_file,
+                'rel_path': rel_path,
+                'view_rel_path': view_rel,
+                'student_name': student_name,
+                'kelas': norm_kelas,
+                'materi': materi,
+                'jurusan': jurusan,
+                'skor_pg': skor_pg,
+                'date': date_str
+            })
+
+    results.sort(key=lambda x: x['date'], reverse=True)
+    return jsonify({
+        'status': 'success',
+        'results': results,
+        'classes': sorted(list(classes_set))
+    })
+
+@app.route('/view-hasil/<path:filepath>')
+def api_view_hasil(filepath):
+    """API endpoint to view or serve student exam result file/HTML."""
+    candidate_dirs = [
+        os.path.join(BASE_DIR, 'hasil ujian'),
+        os.path.join(os.path.dirname(BASE_DIR), 'hasil ujian'),
+        os.path.join(os.getcwd(), 'hasil ujian')
+    ]
+    hasil_dir = next((d for d in candidate_dirs if os.path.exists(d) and os.path.isdir(d)), os.path.join(BASE_DIR, 'hasil ujian'))
+    clean_fp = filepath.replace('\\', '/')
+    full_path = os.path.abspath(os.path.join(hasil_dir, clean_fp))
+
+    # Check if html exists in same folder
+    folder_dir = os.path.dirname(full_path)
+    html_candidate = os.path.join(folder_dir, 'hasil_ujian.html')
+    if os.path.exists(html_candidate):
+        return send_file(html_candidate)
+
+    if os.path.exists(full_path) and full_path.startswith(os.path.abspath(hasil_dir)):
+        return send_file(full_path)
+
+    return "File tidak ditemukan", 404
+
+
+
 if __name__ == '__main__':
     try:
         from waitress import serve
