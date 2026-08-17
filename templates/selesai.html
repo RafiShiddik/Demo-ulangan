@@ -177,13 +177,12 @@
         </div>
         {% endif %}
 
-        <h3 style="text-align: left; color: #38bdf8; font-size: 16px; margin-bottom: 12px;">Hasil Pilihan Ganda:</h3>
+        <h3 style="text-align: left; color: #38bdf8; font-size: 16px; margin-bottom: 12px;">Jawaban Pilihan Ganda Terkirim:</h3>
         <table class="check-table">
             <thead>
                 <tr>
                     <th>No. Soal</th>
-                    <th>Jawaban Anda</th>
-                    <th>Hasil</th>
+                    <th style="text-align: center;">Jawaban Anda</th>
                 </tr>
             </thead>
             <tbody>
@@ -191,13 +190,6 @@
                 <tr>
                     <td><strong>Soal {{ d.index }}</strong></td>
                     <td style="text-align: center;">{{ d.student_answer or '-' }}</td>
-                    <td>
-                        {% if d.is_correct %}
-                        <span class="badge-result badge-correct">BENAR</span>
-                        {% else %}
-                        <span class="badge-result badge-false">SALAH</span>
-                        {% endif %}
-                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
