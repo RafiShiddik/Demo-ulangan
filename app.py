@@ -294,6 +294,9 @@ def load_questions(kelas, materi=None):
         parts = [parse_docx_math(child) for child in p._element]
         p_text = ''.join(parts).strip()
         
+        pPr = p._element.pPr
+        has_numPr = pPr is not None and pPr.numPr is not None
+        
         blips = []
         def find_blips(el):
             tag = el.tag.split('}')[-1]
@@ -309,7 +312,7 @@ def load_questions(kelas, materi=None):
         for rId in blips:
             if rId in images_map:
                 img_htmls.append(f'<div class="exam-image-container"><img class="exam-image" src="{images_map[rId]}" alt="Gambar Soal"></div>')
-        
+                
         img_str = "".join(img_htmls)
         
         if p_text or img_str:
@@ -318,8 +321,8 @@ def load_questions(kelas, materi=None):
                 
             combined = (p_text + "<br>" + img_str).strip("<br>").strip() if p_text else img_str
             
-            # If it's an image-only paragraph (no text, only img): attach to previous paragraph!
-            if not p_text and img_str and paragraphs_text:
+            # An image-only paragraph is ONLY a continuation if it does NOT have numPr!
+            if not p_text and img_str and not has_numPr and paragraphs_text:
                 paragraphs_text[-1] = paragraphs_text[-1] + "<br>" + img_str
             else:
                 paragraphs_text.append(combined)
@@ -358,36 +361,40 @@ def load_questions(kelas, materi=None):
         if curr and curr['choices']:
             questions.append(curr)
 
-    # Mode 2: Word Automatic List / Block Parsing (5 options per question)
+    # Mode 2: Word Automatic List / Block Parsing (supports 5, 4, or 3 options per question)
     if not questions:
         i = 0
         while i < len(paragraphs_text):
-            if i + 5 < len(paragraphs_text):
-                q_cand = paragraphs_text[i]
-                opts = paragraphs_text[i+1:i+6]
-                
-                opts_valid = all(len(strip_html(o)) < 150 for o in opts)
-                q_lower = strip_html(q_cand).lower()
-                
-                is_theory_title = any(h in q_lower for h in ['apa itu', 'tipe-tipe', 'translasi vertical', 'translasi horizontal', 'pergeseran'])
-                has_question_indicator = (
-                    ('?' in q_cand or '...' in q_cand or 'adalah' in q_lower or 'ditranslasikan' in q_lower or 'ditransformasikan' in q_lower or 'koordinat' in q_lower or 'bayangan' in q_lower or 'banyangan' in q_lower or 'tentukan' in q_lower or 'contoh' in q_lower) and
-                    any(kw in q_lower for kw in ['koordinat', 'bayangan', 'banyangan', 'titik', 'garis', 'segitiga', 'persamaan', 'fungsi', 'hasil', 'jika', 'contoh'])
-                )
-                
-                if not is_theory_title and has_question_indicator and opts_valid and len(strip_html(q_cand)) > 5:
-                    choices = {}
-                    letters = ['A', 'B', 'C', 'D', 'E']
-                    for l_idx, o in enumerate(opts):
-                        choices[letters[l_idx]] = clean_opt(o)
-                    questions.append({
-                        'index': len(questions) + 1,
-                        'question': re.sub(r'^\d+[\.\)]\s*', '', q_cand),
-                        'choices': choices
-                    })
-                    i += 6
-                    continue
-            i += 1
+            matched = False
+            for window_size in [5, 4, 3]:
+                if i + window_size < len(paragraphs_text):
+                    q_cand = paragraphs_text[i]
+                    opts = paragraphs_text[i+1 : i + window_size + 1]
+                    
+                    opts_valid = all(len(strip_html(o)) < 150 for o in opts)
+                    q_lower = strip_html(q_cand).lower()
+                    
+                    is_theory_title = any(h in q_lower for h in ['apa itu', 'tipe-tipe', 'translasi vertical', 'translasi horizontal', 'pergeseran'])
+                    has_question_indicator = (
+                        ('?' in q_cand or '...' in q_cand or 'adalah' in q_lower or 'ditranslasikan' in q_lower or 'ditransformasikan' in q_lower or 'koordinat' in q_lower or 'bayangan' in q_lower or 'banyangan' in q_lower or 'tentukan' in q_lower or 'contoh' in q_lower or 'grafik' in q_lower or 'berubah' in q_lower or 'mana' in q_lower) and
+                        any(kw in q_lower for kw in ['koordinat', 'bayangan', 'banyangan', 'titik', 'garis', 'segitiga', 'persamaan', 'fungsi', 'hasil', 'jika', 'contoh', 'grafik', 'berubah', 'mana'])
+                    )
+                    
+                    if not is_theory_title and has_question_indicator and opts_valid and len(strip_html(q_cand)) > 5:
+                        choices = {}
+                        letters = ['A', 'B', 'C', 'D', 'E']
+                        for l_idx, o in enumerate(opts):
+                            choices[letters[l_idx]] = clean_opt(o)
+                        questions.append({
+                            'index': len(questions) + 1,
+                            'question': re.sub(r'^\d+[\.\)]\s*', '', q_cand),
+                            'choices': choices
+                        })
+                        i += (window_size + 1)
+                        matched = True
+                        break
+            if not matched:
+                i += 1
 
     # Mode 3: Inline Options fallback (e.g. 3 lines per question)
     if not questions:
