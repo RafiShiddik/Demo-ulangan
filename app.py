@@ -51,6 +51,56 @@ CONFIG = {
 # Real-time state of student sessions (helps proctors monitor exams and manage locks)
 ACTIVE_STUDENTS = {}
 
+ACTIVE_STUDENTS_FILE = os.path.join(BASE_DIR, 'data_token', 'active_students.json')
+CONFIG_FILE = os.path.join(BASE_DIR, 'data_token', 'config.json')
+
+def load_config():
+    global CONFIG
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+                CONFIG.update(saved)
+        except Exception as e:
+            print(f"[load_config Error] {e}")
+    return CONFIG
+
+def save_config():
+    try:
+        os.makedirs(os.path.join(BASE_DIR, 'data_token'), exist_ok=True)
+        temp_file = CONFIG_FILE + ".tmp"
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(CONFIG, f, ensure_ascii=False, indent=2)
+        os.replace(temp_file, CONFIG_FILE)
+    except Exception as e:
+        print(f"[save_config Error] {e}")
+
+def load_active_students():
+    global ACTIVE_STUDENTS
+    if os.path.exists(ACTIVE_STUDENTS_FILE):
+        try:
+            with open(ACTIVE_STUDENTS_FILE, 'r', encoding='utf-8') as f:
+                ACTIVE_STUDENTS = json.load(f)
+        except Exception as e:
+            print(f"[load_active_students Error] {e}")
+    return ACTIVE_STUDENTS
+
+def save_active_students():
+    try:
+        os.makedirs(os.path.join(BASE_DIR, 'data_token'), exist_ok=True)
+        temp_file = ACTIVE_STUDENTS_FILE + ".tmp"
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(ACTIVE_STUDENTS, f, ensure_ascii=False, indent=2)
+        os.replace(temp_file, ACTIVE_STUDENTS_FILE)
+    except Exception as e:
+        print(f"[save_active_students Error] {e}")
+
+@app.before_request
+def sync_app_state():
+    """Sync active student sessions and config from disk before processing any request."""
+    load_config()
+    load_active_students()
+
 @app.after_request
 def add_header(r):
     """Ensure browser never caches exam or login pages to prevent back-button bypasses."""
@@ -690,7 +740,7 @@ def login():
             display_letters = ['A', 'B', 'C', 'D', 'E'][:len(orig_keys)]
             for i, disp_char in enumerate(display_letters):
                 mapping[disp_char] = shuffled_orig[i]
-            shuffled_choices[q_idx] = mapping
+            shuffled_choices[str(q_idx)] = mapping
             
         exam_token = generate_unique_exam_token()
         
@@ -710,6 +760,7 @@ def login():
             'question_order': q_order,
             'shuffled_choices': shuffled_choices
         }
+        save_active_students()
         
         session['siswa'] = nama
         session['kelas'] = kelas
@@ -753,6 +804,7 @@ def konfirmasi():
                 ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
                 ACTIVE_STUDENTS[nama_clean]['token_baru'] = ''
                 ACTIVE_STUDENTS[nama_clean]['lock_time'] = None
+                save_active_students()
                 
                 filepath = f"data_token/{nama_clean}.txt"
                 if os.path.exists(filepath):
@@ -774,6 +826,7 @@ def konfirmasi():
             expected_token = student_state.get('exam_token', '')
             if token_input == expected_token:
                 ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
+                save_active_students()
                 session['status'] = 'aktif'
                 return redirect(url_for('ujian'))
             else:
@@ -853,6 +906,7 @@ def save_answers():
                 ACTIVE_STUDENTS[nama_clean]['answers'].update(data['answers'])
             if 'essay_answers' in data and isinstance(data['essay_answers'], dict):
                 ACTIVE_STUDENTS[nama_clean]['essay_answers'].update(data['essay_answers'])
+            save_active_students()
             return jsonify({'status': 'success'})
         except Exception as e:
             return jsonify({'error': str(e)}), 400
@@ -908,6 +962,7 @@ def lock():
             print(f"[Lock File Save Warning] Could not save token file: {e}")
             
         session['status'] = 'terkunci'
+        save_active_students()
             
         return jsonify({'status': 'locked', 'token_file': filename or '', 'lock_count': ACTIVE_STUDENTS[nama_clean]['lock_count']})
         
@@ -931,6 +986,7 @@ def unlock():
             ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
             ACTIVE_STUDENTS[nama_clean]['token_baru'] = ''
             ACTIVE_STUDENTS[nama_clean]['lock_time'] = None
+            save_active_students()
             
             session['status'] = 'aktif'
             
@@ -1293,6 +1349,7 @@ def submit():
         ACTIVE_STUDENTS[nama_clean]['score'] = score
         ACTIVE_STUDENTS[nama_clean]['answers'] = student_answers
         ACTIVE_STUDENTS[nama_clean]['essay_answers'] = student_essay_answers
+        save_active_students()
         
     session['status'] = 'selesai'
     session['score'] = score
@@ -1621,8 +1678,28 @@ def proctor_api_students():
     if 'proctor' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
         
-    # Return active student list as JSON (allows refreshing the proctor page dynamically)
-    return jsonify(list(ACTIVE_STUDENTS.values()))
+    try:
+        load_active_students()
+        clean_students = []
+        for s in ACTIVE_STUDENTS.values():
+            if not isinstance(s, dict):
+                continue
+            clean_students.append({
+                'nama': str(s.get('nama', '')),
+                'kelas': str(s.get('kelas', '')),
+                'jurusan': str(s.get('jurusan', '')),
+                'materi': str(s.get('materi', '')),
+                'status': str(s.get('status', 'konfirmasi')),
+                'exam_token': str(s.get('exam_token', '')),
+                'token_baru': str(s.get('token_baru', '')),
+                'lock_time': str(s.get('lock_time', '')) if s.get('lock_time') else None,
+                'score': s.get('score'),
+                'lock_count': int(s.get('lock_count', 0))
+            })
+        return jsonify(clean_students)
+    except Exception as e:
+        print(f"[proctor_api_students Error] {e}")
+        return jsonify([])
 
 
 @app.route('/pengawas/api/unlock/<nama>', methods=['POST'])
@@ -1635,6 +1712,7 @@ def proctor_api_unlock(nama):
         ACTIVE_STUDENTS[nama_clean]['status'] = 'aktif'
         ACTIVE_STUDENTS[nama_clean]['token_baru'] = ''
         ACTIVE_STUDENTS[nama_clean]['lock_time'] = None
+        save_active_students()
         
         # Remove file
         filepath = f"data_token/{nama_clean}.txt"
@@ -1665,6 +1743,7 @@ def proctor_api_reset(nama):
                 
         # Completely remove/reset student records so they can log back in
         del ACTIVE_STUDENTS[nama_clean]
+        save_active_students()
         return jsonify({'status': 'success'})
         
     return jsonify({'error': 'Student not found'}), 404
@@ -1683,6 +1762,7 @@ def proctor_api_kick(nama):
         token_baru = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         ACTIVE_STUDENTS[nama_clean]['token_baru'] = token_baru
         ACTIVE_STUDENTS[nama_clean]['lock_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        save_active_students()
         
         try:
             token_dir = os.path.join(BASE_DIR, 'data_token')
@@ -1721,6 +1801,7 @@ def proctor_api_update_token():
         return jsonify({'error': 'Token invalid'}), 400
         
     CONFIG['INITIAL_TOKEN'] = new_token
+    save_config()
     return jsonify({'status': 'success', 'new_token': new_token})
 
 
