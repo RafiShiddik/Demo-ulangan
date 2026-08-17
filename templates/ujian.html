@@ -27,6 +27,32 @@
             -webkit-user-drag: none;
             user-select: none;
         }
+        /* Instant Blackout on Blur / Screenshot attempt */
+        body.blur-protected .exam-card,
+        body.blur-protected .identity-banner {
+            filter: blur(60px) brightness(0) !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+            transition: none !important;
+        }
+        body.blur-protected::after {
+            content: "🚫 TANGKAPAN LAYAR / SCREENSHOT DIBLOKIR";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #0b0f1a;
+            color: #ef4444;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: 700;
+            z-index: 999999;
+            text-align: center;
+            padding: 20px;
+        }
         body {
             font-family: 'Outfit', sans-serif;
             background-color: #0b1329;
@@ -591,18 +617,30 @@
             }, 600);
         }
 
-        // 1. Detect switching browser tabs / minimizing window
+        // 1. Detect switching browser tabs / minimizing window / screenshot tool overlay
         document.addEventListener('visibilitychange', function() {
-            if (document.visibilityState === 'hidden' && !gracePeriodActive) {
+            if (document.visibilityState === 'hidden') {
+                document.body.classList.add('blur-protected');
+                clearClipboard();
+                if (!gracePeriodActive) {
+                    triggerLockout();
+                }
+            } else {
+                document.body.classList.remove('blur-protected');
+            }
+        });
+
+        // 2. Detect leaving window focus (Snipping tool / screenshot apps trigger window blur)
+        window.addEventListener('blur', function() {
+            document.body.classList.add('blur-protected');
+            clearClipboard();
+            if (!gracePeriodActive && hasBeenFocused) {
                 triggerLockout();
             }
         });
 
-        // 2. Detect leaving window focus (only if grace period passed and page was focused once)
-        window.addEventListener('blur', function() {
-            if (!gracePeriodActive && hasBeenFocused) {
-                triggerLockout();
-            }
+        window.addEventListener('focus', function() {
+            document.body.classList.remove('blur-protected');
         });
 
         // 3. Detect reloading, navigating away, or closing the tab
