@@ -476,9 +476,12 @@ def load_questions(kelas, materi=None):
                     break
             
             if len(opts) >= 3:
+                extracted_lets = [get_option_letter(o) for o in opts[:5]]
+                use_extracted = (all(l is not None for l in extracted_lets) and len(set(extracted_lets)) == len(extracted_lets))
+                
                 choices = {}
                 for idx_o, o in enumerate(opts[:5]):
-                    let = get_option_letter(o) or letters[idx_o]
+                    let = extracted_lets[idx_o] if use_extracted else letters[idx_o]
                     choices[let] = fix_math_html(clean_opt(o))
                 
                 questions.append({
@@ -514,17 +517,31 @@ def load_answers(kelas, materi=None):
         return {}
         
     doc = docx.Document(key_path)
-    answers = {}
-    q_index = 1
+    lines = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    full_text = "\n".join(lines)
     
-    for p in doc.paragraphs:
-        txt = p.text.strip().upper()
-        if not txt or 'KUNCI' in txt or 'JAWABAN' in txt:
+    # 1. Check for explicit numbered keys (e.g. "1. A", "1: B", "1) C", "No. 1 D", "1. Jawaban B")
+    numbered_answers = {}
+    matches = re.findall(r'(?:soal\s*|no\s*|\b)?(\d+)[\.\:\)]\s*(?:jawaban\s*[\:\=]\s*)?([A-Ea-e])\b', full_text, re.IGNORECASE)
+    for q_str, let_str in matches:
+        q_num = int(q_str)
+        if 1 <= q_num <= 100 and q_num not in numbered_answers:
+            numbered_answers[q_num] = let_str.upper()
+            
+    if numbered_answers:
+        return numbered_answers
+
+    # 2. Fallback: Single letter lines (e.g. "C", "A", "A", "B", "E")
+    answers = {}
+    q_idx = 1
+    for l in lines:
+        l_clean = l.strip().upper()
+        if not l_clean or any(w in l_clean for w in ['KUNCI', 'JAWABAN', 'SOAL', 'DIKETAHUI', 'FUNGSI', 'JIKA', 'HITUNGLAH']):
             continue
-        match = re.search(r'[A-E]', txt)
-        if match:
-            answers[q_index] = match.group(0)
-            q_index += 1
+        m = re.match(r'^\s*\(?([A-E])\)?:?\.?\s*$', l_clean)
+        if m:
+            answers[q_idx] = m.group(1)
+            q_idx += 1
             
     return answers
 
@@ -2083,6 +2100,67 @@ def api_delete_soal():
         return jsonify({'status': 'success', 'message': f'Materi {materi} berhasil dihapus dari server siswa'}), 200
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/delete_student_result', methods=['POST'])
+def api_delete_student_result():
+    """API endpoint to delete student exam result folder remotely from Server Guru."""
+    rel_path = request.form.get('rel_path', '').strip()
+    student_name = request.form.get('student_name', '').strip()
+    kelas = request.form.get('kelas', '').strip()
+    jurusan = request.form.get('jurusan', '').strip()
+    materi = request.form.get('materi', '').strip()
+
+    candidate_dirs = [
+        os.path.join(BASE_DIR, 'hasil ujian'),
+        os.path.join(os.path.dirname(BASE_DIR), 'hasil ujian'),
+        os.path.join(os.getcwd(), 'hasil ujian')
+    ]
+    hasil_dir = next((d for d in candidate_dirs if os.path.exists(d) and os.path.isdir(d)), os.path.join(BASE_DIR, 'hasil ujian'))
+
+    deleted_count = 0
+
+    if rel_path:
+        clean_fp = rel_path.replace('\\', '/')
+        full_path = os.path.abspath(os.path.join(hasil_dir, clean_fp))
+        if os.path.exists(full_path) and full_path.startswith(os.path.abspath(hasil_dir)):
+            target_dir = os.path.dirname(full_path)
+            if os.path.exists(target_dir) and os.path.isdir(target_dir):
+                try:
+                    shutil.rmtree(target_dir)
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"[Remote Delete Result Error] {e}")
+
+    # Fallback / Filter deletion
+    if deleted_count == 0 and os.path.exists(hasil_dir):
+        norm_k = kelas.replace('Kelas ', '').replace('kelas ', '').strip() if kelas else ''
+        for root, dirs, files in os.walk(hasil_dir):
+            for file in files:
+                if file in ['hasil.txt', 'hasil_ujian.html']:
+                    fp = os.path.join(root, file)
+                    rel = os.path.relpath(fp, hasil_dir).replace('\\', '/')
+                    p_parts = rel.split('/')
+                    
+                    r_k = p_parts[0] if len(p_parts) >= 1 else ''
+                    r_m = p_parts[1] if len(p_parts) >= 4 else (p_parts[1] if len(p_parts) == 3 else '')
+                    r_j = p_parts[2] if len(p_parts) >= 4 else (p_parts[1] if len(p_parts) == 3 else '')
+                    r_st = p_parts[3] if len(p_parts) >= 4 else (p_parts[2] if len(p_parts) == 3 else p_parts[-2] if len(p_parts) >= 2 else '')
+
+                    m_k = not norm_k or norm_k.lower() in r_k.lower()
+                    m_j = not jurusan or jurusan == 'ALL' or jurusan.lower() in r_j.lower()
+                    m_m = not materi or materi == 'ALL' or materi.lower() in r_m.lower()
+                    m_st = not student_name or student_name.lower() in r_st.lower().replace('_', ' ')
+
+                    if m_k and m_j and m_m and m_st:
+                        target_dir = os.path.dirname(fp)
+                        if os.path.exists(target_dir) and os.path.isdir(target_dir):
+                            try:
+                                shutil.rmtree(target_dir)
+                                deleted_count += 1
+                            except Exception as e:
+                                print(f"[Remote Filter Delete Result Error] {e}")
+
+    return jsonify({'status': 'success', 'deleted_count': deleted_count}), 200
 
 
 
