@@ -24,6 +24,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'static'), static_url_path='/static')
 app.secret_key = 'bm_exam_secure_secret_key_2026'
+application = app
 
 @app.route('/smk budi murni 2.jpg')
 @app.route('/smk%20budi%20murni%202.jpg')
