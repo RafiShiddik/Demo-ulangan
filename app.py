@@ -2101,14 +2101,16 @@ def api_delete_soal():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@app.route('/api/delete_student_result', methods=['POST'])
+@app.route('/api/delete_student_result', methods=['GET', 'POST'])
+@app.route('/api/delete-student-result', methods=['GET', 'POST'])
+@app.route('/delete-student-result', methods=['GET', 'POST'])
 def api_delete_student_result():
     """API endpoint to delete student exam result folder remotely from Server Guru."""
-    rel_path = request.form.get('rel_path', '').strip()
-    student_name = request.form.get('student_name', '').strip()
-    kelas = request.form.get('kelas', '').strip()
-    jurusan = request.form.get('jurusan', '').strip()
-    materi = request.form.get('materi', '').strip()
+    rel_path = (request.form.get('rel_path') or request.args.get('rel_path') or '').strip()
+    student_name = (request.form.get('student_name') or request.args.get('student_name') or '').strip()
+    kelas = (request.form.get('kelas') or request.args.get('kelas') or '').strip()
+    jurusan = (request.form.get('jurusan') or request.args.get('jurusan') or '').strip()
+    materi = (request.form.get('materi') or request.args.get('materi') or '').strip()
 
     candidate_dirs = [
         os.path.join(BASE_DIR, 'hasil ujian'),
