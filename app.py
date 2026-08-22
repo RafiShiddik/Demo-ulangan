@@ -2101,6 +2101,22 @@ def api_delete_soal():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+def cleanup_empty_parent_dirs(start_dir, stop_dir):
+    current = start_dir
+    stop_abs = os.path.abspath(stop_dir)
+    while current:
+        curr_abs = os.path.abspath(current)
+        if curr_abs == stop_abs or not curr_abs.startswith(stop_abs):
+            break
+        try:
+            if os.path.exists(curr_abs) and os.path.isdir(curr_abs) and not os.listdir(curr_abs):
+                os.rmdir(curr_abs)
+                current = os.path.dirname(curr_abs)
+            else:
+                break
+        except Exception:
+            break
+
 @app.route('/api/delete_student_result', methods=['GET', 'POST'])
 @app.route('/api/delete-student-result', methods=['GET', 'POST'])
 @app.route('/delete-student-result', methods=['GET', 'POST'])
@@ -2128,8 +2144,10 @@ def api_delete_student_result():
             target_dir = os.path.dirname(full_path)
             if os.path.exists(target_dir) and os.path.isdir(target_dir):
                 try:
+                    parent_d = os.path.dirname(target_dir)
                     shutil.rmtree(target_dir)
                     deleted_count += 1
+                    cleanup_empty_parent_dirs(parent_d, hasil_dir)
                 except Exception as e:
                     print(f"[Remote Delete Result Error] {e}")
 
@@ -2157,10 +2175,23 @@ def api_delete_student_result():
                         target_dir = os.path.dirname(fp)
                         if os.path.exists(target_dir) and os.path.isdir(target_dir):
                             try:
+                                parent_d = os.path.dirname(target_dir)
                                 shutil.rmtree(target_dir)
                                 deleted_count += 1
+                                cleanup_empty_parent_dirs(parent_d, hasil_dir)
                             except Exception as e:
                                 print(f"[Remote Filter Delete Result Error] {e}")
+
+    # General cleanup of all remaining empty directories inside hasil_dir
+    if os.path.exists(hasil_dir):
+        for root, dirs, files in os.walk(hasil_dir, topdown=False):
+            for d in dirs:
+                dp = os.path.join(root, d)
+                if os.path.exists(dp) and os.path.isdir(dp) and not os.listdir(dp):
+                    try:
+                        os.rmdir(dp)
+                    except Exception:
+                        pass
 
     return jsonify({'status': 'success', 'deleted_count': deleted_count}), 200
 
